@@ -1,0 +1,72 @@
+name: kitmunicator
+description: "KITmunicator Mobile – Internes Kommunikationssystem"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.7
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # SIP / WebRTC
+  sip_ua: ^1.0.1
+  flutter_webrtc: ^0.12.4
+
+  # Native Call-UI (CallKit iOS / ConnectionService Android)
+  flutter_callkit_incoming: ^2.2.0
+
+  # Push Notifications
+  firebase_core: ^3.13.0
+  firebase_messaging: ^15.2.5
+
+  # Auth (Keycloak via OIDC)
+  flutter_appauth: ^7.0.1
+  flutter_secure_storage: ^9.2.4
+
+  # HTTP
+  dio: ^5.8.0+1
+
+  # State Management
+  flutter_riverpod: ^2.6.1
+
+  # Navigation
+  go_router: ^15.1.2
+
+  # Utils
+  intl: ^0.20.2
+  uuid: ^4.5.1
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/kitmunicator_icon.png"
+  background_color: "#0A1628"
+  adaptive_icon_background: "#0A1628"
+  adaptive_icon_foreground: "assets/images/kitmunicator_icon.png"
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+
+  fonts:
+    - family: Montserrat
+      fonts:
+        - asset: assets/fonts/Montserrat-Variable.ttf
+          weight: 100
+        - asset: assets/fonts/Montserrat-Variable.ttf
+          weight: 400
+        - asset: assets/fonts/Montserrat-Variable.ttf
+          weight: 700
+        - asset: assets/fonts/Montserrat-Variable.ttf
+          weight: 800

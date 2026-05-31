@@ -1,0 +1,39 @@
+# Umgebungsvariablen – niemals committen
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Firebase / Google services
+backend/firebase-adminsdk.json
+mobile/google-services.json
+mobile/android/app/google-services.json
+mobile/*firebase-adminsdk*.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Alembic – generierte Migrations-Skripte werden committed, aber nicht der Cache
+backend/alembic/versions/__pycache__/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Docker
+*.log
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -1,0 +1,173 @@
+# ============================================================
+# KITmunicator – PROD (Hetzner)
+#
+# Traefik läuft als externer Proxy und wird über Labels gesteuert.
+# Voraussetzung: Traefik-Netzwerk "traefik_net" existiert,
+# Traefik selbst läuft in diesem Netzwerk.
+#
+# Starten: make prod-up
+# ============================================================
+
+networks:
+  # Internes Netz für alle KITmunicator-Services
+  kitmunicator_net:
+    name: kitmunicator_net
+    driver: bridge
+  # Traefik-Netz – muss bereits existieren
+  traefik_net:
+    external: true
+
+volumes:
+  postgres_data:
+  asterisk_config:
+  asterisk_sounds:
+  asterisk_logs:
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────
+  kitmunicator_postgres:
+    image: postgres:16-alpine
+    container_name: kitmunicator_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kitmunicator
+      POSTGRES_USER: kitmunicator
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - kitmunicator_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kitmunicator -d kitmunicator"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Backend ────────────────────────────────────────────────
+  kitmunicator_backend:
+    image: ${REGISTRY:-ghcr.io/kit-it-koblenz}/kitmunicator-backend:${TAG:-latest}
+    container_name: kitmunicator_backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-kitmunicator}:${POSTGRES_PASSWORD}@kitmunicator_postgres:5432/kitmunicator
+      DEBUG: "false"
+      FIREBASE_SERVICE_ACCOUNT_FILE: /app/firebase-adminsdk.json
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-kitmunicator}
+    volumes:
+      - ./mobile/kitmunicator-firebase-adminsdk-fbsvc-72c93a0022.json:/app/firebase-adminsdk.json:ro
+    depends_on:
+      kitmunicator_postgres:
+        condition: service_healthy
+      kitmunicator_asterisk:
+        condition: service_healthy
+    networks:
+      - kitmunicator_net
+      - traefik_net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.kitmunicator-api.rule=Host(`api.kitmunicator.${DOMAIN}`)"
+      - "traefik.http.routers.kitmunicator-api.entrypoints=websecure"
+      - "traefik.http.routers.kitmunicator-api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.kitmunicator-api.loadbalancer.server.port=8000"
+      # WebSocket-Support für /ws/presence
+      - "traefik.http.middlewares.kitmunicator-ws.headers.customrequestheaders.Connection=keep-alive, Upgrade"
+      - "traefik.http.routers.kitmunicator-api.middlewares=kitmunicator-ws"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ── Frontend ───────────────────────────────────────────────
+  kitmunicator_ui:
+    image: ${REGISTRY:-ghcr.io/kit-it-koblenz}/kitmunicator-ui:${TAG:-latest}
+    container_name: kitmunicator_ui
+    restart: unless-stopped
+    networks:
+      - kitmunicator_net
+      - traefik_net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.kitmunicator-ui.rule=Host(`kitmunicator.${DOMAIN}`)"
+      - "traefik.http.routers.kitmunicator-ui.entrypoints=websecure"
+      - "traefik.http.routers.kitmunicator-ui.tls.certresolver=letsencrypt"
+      - "traefik.http.services.kitmunicator-ui.loadbalancer.server.port=80"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── Asterisk (WebRTC PBX) ──────────────────────────────────
+  kitmunicator_asterisk:
+    image: andrius/asterisk:20
+    container_name: kitmunicator_asterisk
+    restart: unless-stopped
+    ports:
+      - "5060:5060/udp"
+      # WSS-Port: Traefik terminiert TLS und leitet an 8089 weiter
+      - "8089:8089"
+      # RTP-Mediaports (Hetzner-Firewall muss diese freigeben!)
+      - "10000-10200:10000-10200/udp"
+    volumes:
+      - ./infra/asterisk:/etc/asterisk:ro
+      - asterisk_config:/var/lib/asterisk
+      - asterisk_sounds:/var/lib/asterisk/sounds
+      - asterisk_logs:/var/log/asterisk
+    networks:
+      - kitmunicator_net
+      - traefik_net
+    labels:
+      - "traefik.enable=true"
+      # WSS-Endpunkt für SIP.js im Browser
+      - "traefik.http.routers.kitmunicator-wss.rule=Host(`sip.kitmunicator.${DOMAIN}`)"
+      - "traefik.http.routers.kitmunicator-wss.entrypoints=websecure"
+      - "traefik.http.routers.kitmunicator-wss.tls.certresolver=letsencrypt"
+      - "traefik.http.services.kitmunicator-wss.loadbalancer.server.port=8089"
+    healthcheck:
+      test: ["CMD", "asterisk", "-rx", "core show version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ── coturn (STUN/TURN) ─────────────────────────────────────
+  kitmunicator_coturn:
+    image: coturn/coturn:4.6-alpine
+    container_name: kitmunicator_coturn
+    restart: unless-stopped
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      # TURN-Relay-Ports (Hetzner-Firewall freigeben!)
+      - "49160-49200:49160-49200/udp"
+    volumes:
+      - ./infra/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    networks:
+      - kitmunicator_net
+    healthcheck:
+      test: ["CMD", "turnutils_uclient", "-p", "3478", "127.0.0.1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # ── DB-Migrations (läuft einmalig beim Start) ──────────────
+  kitmunicator_migrate:
+    image: ${REGISTRY:-ghcr.io/kit-it-koblenz}/kitmunicator-backend:${TAG:-latest}
+    container_name: kitmunicator_migrate
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-kitmunicator}:${POSTGRES_PASSWORD}@kitmunicator_postgres:5432/kitmunicator
+    depends_on:
+      kitmunicator_postgres:
+        condition: service_healthy
+    networks:
+      - kitmunicator_net

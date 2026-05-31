@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 310 48" width="310" height="48" role="img" aria-label="KITmunicator">
+  <title>KITmunicator</title>
+  <text
+    y="38"
+    font-family="'Montserrat', 'Arial Black', sans-serif"
+    font-weight="800"
+    font-size="36"
+    fill="#06B6D4"
+    letter-spacing="-0.5"
+  >KIT</text>
+  <text
+    x="76"
+    y="38"
+    font-family="'Montserrat', Arial, sans-serif"
+    font-weight="400"
+    font-size="36"
+    fill="#FFFFFF"
+  >municator</text>
+</svg>

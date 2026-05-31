@@ -1,0 +1,53 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #app {
+  height: 100%;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  color: var(--kit-text);
+  background: var(--kit-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+}
+
+input, textarea {
+  font: inherit;
+  color: inherit;
+  background: var(--kit-surface-2);
+  border: 1px solid var(--kit-border);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  outline: none;
+  transition: border-color var(--transition);
+}
+input:focus, textarea:focus {
+  border-color: var(--kit-accent);
+}
+
+a { color: var(--kit-accent); text-decoration: none; }
+a:hover { color: var(--kit-accent-hover); }
+
+/* ── Brand-Typografie ─────────────────────────────────────────────────────── */
+/* Montserrat via Google Fonts (in index.html per <link> einbinden) */
+.brand-kit {
+  color: var(--kit-cyan);
+  font-family: 'Montserrat', var(--font-sans);
+  font-weight: 800;
+}
+.brand-munic {
+  color: var(--kit-white);
+  font-family: 'Montserrat', var(--font-sans);
+  font-weight: 400;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--kit-border); border-radius: var(--radius-full); }

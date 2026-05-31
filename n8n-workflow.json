@@ -1,0 +1,302 @@
+{
+  "name": "KITmunicator – User Onboarding",
+  "active": true,
+  "meta": {
+    "instanceId": "kitmunicator-onboarding-v1"
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "nodes": [
+
+    {
+      "id": "01-webhook-trigger",
+      "name": "Keycloak: User Created",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "keycloak-user-created",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "keycloak-user-created",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "responseCode": 200,
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cred-webhook-secret",
+          "name": "Keycloak Webhook Secret"
+        }
+      }
+    },
+
+    {
+      "id": "02-extract-user",
+      "name": "User-Daten extrahieren",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300],
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            { "id": "a1", "name": "userId",    "value": "={{ $json.body.userId }}", "type": "string" },
+            { "id": "a2", "name": "username",  "value": "={{ $json.body.username }}", "type": "string" },
+            { "id": "a3", "name": "email",     "value": "={{ $json.body.email }}", "type": "string" },
+            { "id": "a4", "name": "firstName", "value": "={{ $json.body.firstName }}", "type": "string" },
+            { "id": "a5", "name": "lastName",  "value": "={{ $json.body.lastName }}", "type": "string" },
+            { "id": "a6", "name": "realmId",   "value": "={{ $json.body.realmId ?? 'kit' }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      }
+    },
+
+    {
+      "id": "03-keycloak-token",
+      "name": "Keycloak: Service-Account-Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KEYCLOAK_URL }}/realms/{{ $env.KEYCLOAK_REALM }}/protocol/openid-connect/token",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/x-www-form-urlencoded" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "grant_type",    "value": "client_credentials" },
+            { "name": "client_id",     "value": "={{ $env.KEYCLOAK_ADMIN_CLIENT_ID }}" },
+            { "name": "client_secret", "value": "={{ $env.KEYCLOAK_ADMIN_CLIENT_SECRET }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+
+    {
+      "id": "04-save-token",
+      "name": "Token merken",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [900, 300],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            { "id": "b1", "name": "adminToken", "value": "={{ $json.access_token }}", "type": "string" },
+            { "id": "b2", "name": "userId",    "value": "={{ $('User-Daten extrahieren').item.json.userId }}", "type": "string" },
+            { "id": "b3", "name": "username",  "value": "={{ $('User-Daten extrahieren').item.json.username }}", "type": "string" },
+            { "id": "b4", "name": "email",     "value": "={{ $('User-Daten extrahieren').item.json.email }}", "type": "string" },
+            { "id": "b5", "name": "firstName", "value": "={{ $('User-Daten extrahieren').item.json.firstName }}", "type": "string" },
+            { "id": "b6", "name": "lastName",  "value": "={{ $('User-Daten extrahieren').item.json.lastName }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      }
+    },
+
+    {
+      "id": "05-workmate-employee",
+      "name": "WorkmateOS: Employee anlegen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 160],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WORKMATE_API_URL }}/api/v1/employees",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.WORKMATE_API_KEY }}" },
+            { "name": "Content-Type",  "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"keycloak_user_id\": \"{{ $json.userId }}\",\n  \"username\": \"{{ $json.username }}\",\n  \"email\": \"{{ $json.email }}\",\n  \"first_name\": \"{{ $json.firstName }}\",\n  \"last_name\": \"{{ $json.lastName }}\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      }
+    },
+
+    {
+      "id": "06-kitmunicator-sip",
+      "name": "KITmunicator: SIP-Account anlegen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 440],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITMUNICATOR_API_URL }}/telephony/accounts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $('Token merken').item.json.adminToken }}" },
+            { "name": "Content-Type",  "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"user_id\": \"{{ $('Token merken').item.json.userId }}\",\n  \"username\": \"{{ $('Token merken').item.json.username }}\",\n  \"extension\": \"{{ $env.SIP_EXTENSION_PREFIX }}{{ $runIndex + $env.SIP_EXTENSION_START | int }}\"\n}",
+        "options": {}
+      }
+    },
+
+    {
+      "id": "07-check-sip",
+      "name": "SIP erfolgreich?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 440],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "exists" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+
+    {
+      "id": "08-merge-results",
+      "name": "Ergebnisse zusammenführen",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1560, 300],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      }
+    },
+
+    {
+      "id": "09-keycloak-attribute",
+      "name": "Keycloak: sip_extension setzen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 300],
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $env.KEYCLOAK_URL }}/admin/realms/{{ $env.KEYCLOAK_REALM }}/users/{{ $('Token merken').item.json.userId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $('Token merken').item.json.adminToken }}" },
+            { "name": "Content-Type",  "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"attributes\": {\n    \"sip_extension\": [\"{{ $('KITmunicator: SIP-Account anlegen').item.json.extension }}\"],\n    \"sip_username\": [\"{{ $('Token merken').item.json.username }}\"]\n  }\n}",
+        "options": {}
+      }
+    },
+
+    {
+      "id": "10-success-log",
+      "name": "Erfolg loggen",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2000, 300],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            { "id": "d1", "name": "result",    "value": "success", "type": "string" },
+            { "id": "d2", "name": "userId",    "value": "={{ $('Token merken').item.json.userId }}", "type": "string" },
+            { "id": "d3", "name": "username",  "value": "={{ $('Token merken').item.json.username }}", "type": "string" },
+            { "id": "d4", "name": "extension", "value": "={{ $('KITmunicator: SIP-Account anlegen').item.json.extension }}", "type": "string" },
+            { "id": "d5", "name": "message",   "value": "=User {{ $('Token merken').item.json.username }} erfolgreich ongeboardet (Durchwahl: {{ $('KITmunicator: SIP-Account anlegen').item.json.extension }})", "type": "string" }
+          ]
+        },
+        "options": {}
+      }
+    },
+
+    {
+      "id": "11-error-handler",
+      "name": "Fehler: SIP-Anlage fehlgeschlagen",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1560, 580],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            { "id": "e1", "name": "result",  "value": "error", "type": "string" },
+            { "id": "e2", "name": "userId",  "value": "={{ $('Token merken').item.json.userId }}", "type": "string" },
+            { "id": "e3", "name": "message", "value": "=SIP-Account für {{ $('Token merken').item.json.username }} konnte nicht angelegt werden.", "type": "string" },
+            { "id": "e4", "name": "details", "value": "={{ JSON.stringify($('KITmunicator: SIP-Account anlegen').item.json) }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      }
+    }
+
+  ],
+
+  "connections": {
+    "Keycloak: User Created": {
+      "main": [[{ "node": "User-Daten extrahieren", "type": "main", "index": 0 }]]
+    },
+    "User-Daten extrahieren": {
+      "main": [[{ "node": "Keycloak: Service-Account-Token", "type": "main", "index": 0 }]]
+    },
+    "Keycloak: Service-Account-Token": {
+      "main": [[{ "node": "Token merken", "type": "main", "index": 0 }]]
+    },
+    "Token merken": {
+      "main": [
+        [
+          { "node": "WorkmateOS: Employee anlegen",      "type": "main", "index": 0 },
+          { "node": "KITmunicator: SIP-Account anlegen", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "WorkmateOS: Employee anlegen": {
+      "main": [[{ "node": "Ergebnisse zusammenführen", "type": "main", "index": 0 }]]
+    },
+    "KITmunicator: SIP-Account anlegen": {
+      "main": [[{ "node": "SIP erfolgreich?", "type": "main", "index": 0 }]]
+    },
+    "SIP erfolgreich?": {
+      "main": [
+        [{ "node": "Ergebnisse zusammenführen",             "type": "main", "index": 1 }],
+        [{ "node": "Fehler: SIP-Anlage fehlgeschlagen", "type": "main", "index": 0 }]
+      ]
+    },
+    "Ergebnisse zusammenführen": {
+      "main": [[{ "node": "Keycloak: sip_extension setzen", "type": "main", "index": 0 }]]
+    },
+    "Keycloak: sip_extension setzen": {
+      "main": [[{ "node": "Erfolg loggen", "type": "main", "index": 0 }]]
+    }
+  }
+}
