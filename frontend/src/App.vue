@@ -6,19 +6,25 @@ import { usePhoneStore } from '@/stores/phone'
 import { usePhone } from '@/composables/usePhone'
 import PresenceBadge from '@/components/shared/PresenceBadge.vue'
 import IncomingCallOverlay from '@/components/shared/IncomingCallOverlay.vue'
+import { usePresence } from '@/composables/usePresence'
 
 const auth = useAuthStore()
 const phone = usePhoneStore()
 const { register } = usePhone()
+const { init: initPresence } = usePresence()
 const route = useRoute()
 
 onMounted(async () => {
-  if (auth.isAuthenticated) await register()
+  if (auth.isAuthenticated) {
+    await register()
+    initPresence()
+  }
 })
 
 const navItems = [
-  { to: '/dialer',   label: 'Dialer',    icon: '☎' },
-  { to: '/contacts', label: 'Kontakte',  icon: '👥' },
+  { to: '/',         label: 'Team',          icon: '👥' },
+  { to: '/dialer',   label: 'Dialer',        icon: '☎' },
+  { to: '/contacts', label: 'Kontakte',      icon: '📋' },
   { to: '/settings', label: 'Einstellungen', icon: '⚙' },
 ]
 </script>
@@ -38,7 +44,7 @@ const navItems = [
           :key="item.to"
           :to="item.to"
           class="nav-item"
-          :class="{ active: route.path.startsWith(item.to) }"
+          :class="{ active: item.to === '/' ? route.path === '/' : route.path.startsWith(item.to) }"
         >
           <span class="nav-icon">{{ item.icon }}</span>
           <span>{{ item.label }}</span>

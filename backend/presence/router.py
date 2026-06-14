@@ -23,6 +23,7 @@ from database import get_db, AsyncSessionLocal
 from keycloak import get_current_user, _get_jwks
 from config import get_settings
 from presence.models import UserPresence, PresenceStatus
+from telephony.models import SipAccount
 
 router = APIRouter()
 
@@ -119,7 +120,45 @@ class PresenceOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TeamMemberPresence(BaseModel):
+    user_id: str
+    username: str
+    extension: str
+    status: PresenceStatus
+    updated_at: datetime | None
+
+
 # ── REST-Endpoints ────────────────────────────────────────────────────────────
+
+@router.get("/team", response_model=list[TeamMemberPresence])
+async def get_team_presence(
+    db: AsyncSession = Depends(get_db),
+    _: dict[str, Any] = Depends(get_current_user),
+) -> list[TeamMemberPresence]:
+    """Alle aktiven SIP-User mit ihrem aktuellen Presence-Status."""
+    accounts = list((await db.scalars(
+        select(SipAccount).where(SipAccount.is_active == True)  # noqa: E712
+    )).all())
+
+    user_ids = [a.user_id for a in accounts]
+    presence_map = {
+        p.user_id: p
+        for p in (await db.scalars(
+            select(UserPresence).where(UserPresence.user_id.in_(user_ids))
+        )).all()
+    }
+
+    return [
+        TeamMemberPresence(
+            user_id=a.user_id,
+            username=a.username,
+            extension=a.extension,
+            status=presence_map[a.user_id].status if a.user_id in presence_map else PresenceStatus.away,
+            updated_at=presence_map[a.user_id].updated_at if a.user_id in presence_map else None,
+        )
+        for a in accounts
+    ]
+
 
 @router.get("/{user_id}", response_model=PresenceOut)
 async def get_presence(
