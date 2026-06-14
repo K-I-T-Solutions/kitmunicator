@@ -1,9 +1,9 @@
 """Asterisk ARI REST Client — alle Operationen async via httpx."""
 import secrets
-import hashlib
 from typing import Any
 
 import httpx
+from cryptography.fernet import Fernet
 
 from config import get_settings, Settings
 
@@ -16,9 +16,16 @@ def _get_ari_client(settings: Settings) -> httpx.AsyncClient:
     )
 
 
-def _hash_password(password: str) -> str:
-    """SHA-256-Hash für lokale Speicherung (Klartext geht nur an Asterisk)."""
-    return hashlib.sha256(password.encode()).hexdigest()
+def _get_fernet() -> Fernet:
+    return Fernet(get_settings().SIP_ENCRYPTION_KEY.encode())
+
+
+def encrypt_password(password: str) -> str:
+    return _get_fernet().encrypt(password.encode()).decode()
+
+
+def decrypt_password(encrypted: str) -> str:
+    return _get_fernet().decrypt(encrypted.encode()).decode()
 
 
 def generate_sip_password() -> str:

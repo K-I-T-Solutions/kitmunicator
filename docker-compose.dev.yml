@@ -69,7 +69,7 @@ services:
     networks:
       - core_network
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:5173"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -77,9 +77,14 @@ services:
 
   # ── Asterisk (WebRTC PBX) ──────────────────────────────────
   kitmunicator_asterisk:
-    image: andrius/asterisk:20
+    build:
+      context: ./infra/asterisk
+      dockerfile: Dockerfile
     container_name: kitmunicator_asterisk
     restart: unless-stopped
+    environment:
+      # Externe IP für ICE-Kandidat — ASTERISK_LOCAL_IP wird automatisch ermittelt
+      ASTERISK_PUBLIC_IP: ${ASTERISK_PUBLIC_IP}
     # network_mode host wäre ideal für RTP/NAT, aber bricht
     # core_network-Kommunikation – daher explizite Port-Bindings
     ports:
@@ -92,7 +97,7 @@ services:
       # RTP-Mediaports
       - "10000-10099:10000-10099/udp"
     volumes:
-      - ./infra/asterisk:/etc/asterisk:ro
+      - ./infra/asterisk:/etc/asterisk-tpl:ro
       - asterisk_config_dev:/var/lib/asterisk
       - asterisk_sounds_dev:/var/lib/asterisk/sounds
     networks:
@@ -119,7 +124,7 @@ services:
     networks:
       - core_network
     healthcheck:
-      test: ["CMD", "turnutils_uclient", "-p", "3478", "127.0.0.1"]
+      test: ["CMD", "nc", "-z", "127.0.0.1", "3478"]
       interval: 60s
       timeout: 5s
       retries: 3

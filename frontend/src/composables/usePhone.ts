@@ -18,20 +18,15 @@ export function usePhone() {
   } = storeToRefs(store)
 
   async function register(): Promise<void> {
-    // SIP-Account-Daten aus dem Backend holen
-    const res = await fetch('/api/telephony/accounts/me', {
+    const res = await fetch('/api/telephony/accounts/me/credentials', {
       headers: auth.getAuthHeader(),
     })
     if (!res.ok) {
       console.error('Kein SIP-Account gefunden – Registrierung übersprungen')
       return
     }
-    const account = await res.json() as { username: string; extension: string }
-
-    // SIP-Passwort liegt nicht im Account-Objekt – kommt aus dem lokalen Storage
-    // (wurde beim ersten Login vom Backend einmalig gesetzt und sicher gespeichert)
-    const password = sessionStorage.getItem('sip_password') ?? ''
-    const sipUri = `sip:${account.username}@${import.meta.env.VITE_SIP_DOMAIN}`
+    const { username, password } = await res.json() as { username: string; extension: string; password: string }
+    const sipUri = `sip:${username}@${import.meta.env.VITE_SIP_DOMAIN}`
     const wsServer = import.meta.env.VITE_SIP_WS_SERVER
 
     await store.setup(sipUri, password, wsServer)

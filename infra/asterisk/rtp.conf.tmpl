@@ -1,0 +1,11 @@
+[general]
+; RTP-Port-Range (muss mit den Docker-Port-Bindings übereinstimmen)
+rtpstart=10000
+rtpend=10099
+
+; ICE-Support für WebRTC
+icesupport=yes
+
+; Docker-interne IP wird beim Start automatisch per hostname -I ermittelt.
+; Externe IP kommt aus ASTERISK_PUBLIC_IP (in .env gesetzt).
+ice_host_candidate=${ASTERISK_LOCAL_IP}:${ASTERISK_PUBLIC_IP}

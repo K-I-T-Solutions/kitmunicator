@@ -17,6 +17,7 @@ httpx==0.28.0
 
 # Google Auth für FCM Service Account
 google-auth==2.38.0
+requests==2.32.3
 
 # Utilities
 python-multipart==0.0.20

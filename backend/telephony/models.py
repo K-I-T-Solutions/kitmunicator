@@ -30,8 +30,8 @@ class SipAccount(Base):
     username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     # Durchwahl z.B. "1001"
     extension: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
-    # Passwort-Hash — Klartext wird nur an Asterisk übergeben, nie gespeichert
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Fernet-verschlüsseltes SIP-Passwort
+    password_encrypted: Mapped[str] = mapped_column(String(500), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # FCM-Push-Token des Geräts — wird von der App nach Login gesetzt
     fcm_token: Mapped[str | None] = mapped_column(String(512), nullable=True)

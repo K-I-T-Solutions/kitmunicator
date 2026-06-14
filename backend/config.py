@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # Asterisk-Webhook: Erlaubte Quell-IPs (Komma-getrennt, leer = alle intern)
     ASTERISK_WEBHOOK_SECRET: str = ""
 
+    # Fernet-Schlüssel für reversible SIP-Passwortverschlüsselung
+    SIP_ENCRYPTION_KEY: str
+
     # App
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
     DEBUG: bool = False

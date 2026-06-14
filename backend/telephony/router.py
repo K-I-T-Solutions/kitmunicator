@@ -16,7 +16,8 @@ from telephony.service import (
     create_sip_endpoint,
     delete_sip_endpoint,
     generate_sip_password,
-    _hash_password,
+    encrypt_password,
+    decrypt_password,
     ARIError,
 )
 from push.fcm_service import send_incoming_call_push, FCMError
@@ -100,7 +101,7 @@ async def create_account(
         user_id=target_user_id,
         username=body.username,
         extension=body.extension,
-        password_hash=_hash_password(password),
+        password_encrypted=encrypt_password(password),
     )
     db.add(account)
     await db.flush()
@@ -120,6 +121,29 @@ async def get_my_account(
     if not account:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kein SIP-Account gefunden")
     return account
+
+
+class SipCredentialsOut(BaseModel):
+    username: str
+    extension: str
+    password: str
+
+
+@router.get("/accounts/me/credentials", response_model=SipCredentialsOut)
+async def get_my_credentials(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> SipCredentialsOut:
+    account = await db.scalar(
+        select(SipAccount).where(SipAccount.user_id == current_user["sub"])
+    )
+    if not account:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kein SIP-Account gefunden")
+    return SipCredentialsOut(
+        username=account.username,
+        extension=account.extension,
+        password=decrypt_password(account.password_encrypted),
+    )
 
 
 @router.get("/accounts/{user_id}", response_model=SipAccountOut)
