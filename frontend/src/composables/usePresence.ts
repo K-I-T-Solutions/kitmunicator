@@ -1,6 +1,5 @@
 import { reactive } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { usePhone } from '@/composables/usePhone'
 
 export type PresenceStatus = 'available' | 'busy' | 'away' | 'dnd'
 export type PhoneStatus = 'idle' | 'ringing' | 'in_call' | 'offline'
