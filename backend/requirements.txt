@@ -21,3 +21,6 @@ requests==2.32.3
 
 # Utilities
 python-multipart==0.0.20
+
+# ARI WebSocket Consumer
+websockets==13.1

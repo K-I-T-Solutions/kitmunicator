@@ -53,7 +53,9 @@ class CallRecord(Base):
     # Asterisk-interne Unique ID des Channels
     asterisk_unique_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     caller_number: Mapped[str] = mapped_column(String(50), nullable=False)
+    caller_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     callee_number: Mapped[str] = mapped_column(String(50), nullable=False)
+    callee_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     direction: Mapped[CallDirection] = mapped_column(SAEnum(CallDirection), nullable=False)
     status: Mapped[CallStatus] = mapped_column(SAEnum(CallStatus), nullable=False)
     # Dauer in Sekunden

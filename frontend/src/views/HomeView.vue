@@ -6,7 +6,7 @@ import { usePresence, STATUS_LABELS, type PresenceStatus, type TeamMember } from
 
 const auth = useAuthStore()
 const { call } = usePhone()
-const { statuses, init, subscribe, setMyStatus, loadTeam } = usePresence()
+const { statuses, phoneStatuses, init, subscribe, setMyStatus, loadTeam } = usePresence()
 
 const team = ref<TeamMember[]>([])
 const showStatusMenu = ref(false)
@@ -95,13 +95,22 @@ onMounted(async () => {
           :key="member.user_id"
           class="team-row"
         >
-          <span class="dot" :class="statuses[member.user_id] ?? 'away'" />
+          <span class="dot-wrap">
+            <span class="dot" :class="statuses[member.user_id] ?? 'away'" />
+            <span
+              v-if="phoneStatuses[member.user_id] === 'ringing' || phoneStatuses[member.user_id] === 'in_call'"
+              class="phone-indicator"
+              :class="phoneStatuses[member.user_id]"
+            >📞</span>
+          </span>
           <div class="member-info">
             <span class="member-name">{{ member.username }}</span>
             <span class="member-ext">{{ member.extension }}</span>
           </div>
-          <span class="member-status-label">
-            {{ STATUS_LABELS[statuses[member.user_id] ?? 'away'] }}
+          <span class="member-status-label" :class="{ 'phone-active': phoneStatuses[member.user_id] === 'ringing' || phoneStatuses[member.user_id] === 'in_call' }">
+            <template v-if="phoneStatuses[member.user_id] === 'ringing'">Klingelt</template>
+            <template v-else-if="phoneStatuses[member.user_id] === 'in_call'">Im Gespräch</template>
+            <template v-else>{{ STATUS_LABELS[statuses[member.user_id] ?? 'away'] }}</template>
           </span>
           <button
             class="call-btn"
@@ -258,6 +267,12 @@ onMounted(async () => {
 .call-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* ── Dots (gleiche Farben wie PresenceBadge) ── */
+.dot-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
 .dot {
   width: 10px;
   height: 10px;
@@ -268,6 +283,27 @@ onMounted(async () => {
 .dot.busy      { background: var(--presence-busy); }
 .dot.away      { background: var(--presence-away); }
 .dot.dnd       { background: var(--presence-dnd); }
+
+.phone-indicator {
+  position: absolute;
+  bottom: -5px;
+  right: -8px;
+  font-size: 8px;
+  line-height: 1;
+  pointer-events: none;
+}
+.phone-indicator.ringing {
+  animation: ring-pulse 0.8s ease-in-out infinite alternate;
+}
+@keyframes ring-pulse {
+  from { opacity: 0.5; transform: scale(0.9); }
+  to   { opacity: 1;   transform: scale(1.1); }
+}
+
+.member-status-label.phone-active {
+  color: var(--kit-accent, #4f8ef7);
+  font-weight: 500;
+}
 
 .empty {
   font-size: var(--text-sm);

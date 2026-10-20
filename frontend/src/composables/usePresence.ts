@@ -3,6 +3,7 @@ import { useAuthStore } from '@/stores/auth'
 import { usePhone } from '@/composables/usePhone'
 
 export type PresenceStatus = 'available' | 'busy' | 'away' | 'dnd'
+export type PhoneStatus = 'idle' | 'ringing' | 'in_call' | 'offline'
 
 export const STATUS_LABELS: Record<PresenceStatus, string> = {
   available: 'Verfügbar',
@@ -16,12 +17,14 @@ export interface TeamMember {
   username: string
   extension: string
   status: PresenceStatus
+  phone_status: PhoneStatus
   updated_at: string | null
 }
 
 // ── Singleton-State (einmal für die gesamte App) ──────────────────────────────
 
 const statuses = reactive<Record<string, PresenceStatus>>({})
+const phoneStatuses = reactive<Record<string, PhoneStatus>>({})
 const subscribedIds = new Set<string>()
 let ws: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -45,9 +48,15 @@ function _connect(token: string) {
   }
 
   ws.onmessage = (e: MessageEvent) => {
-    const msg = JSON.parse(e.data as string) as { type: string; user_id: string; status: PresenceStatus }
+    const msg = JSON.parse(e.data as string) as {
+      type: string
+      user_id: string
+      status: PresenceStatus
+      phone_status: PhoneStatus
+    }
     if (msg.type === 'presence') {
       statuses[msg.user_id] = msg.status
+      if (msg.phone_status) phoneStatuses[msg.user_id] = msg.phone_status
     }
   }
 
@@ -87,10 +96,12 @@ export function usePresence() {
     const res = await fetch('/api/presence/team', { headers: auth.getAuthHeader() })
     if (!res.ok) return []
     const members: TeamMember[] = await res.json()
-    // Initialen Status in reactive Map übernehmen
-    for (const m of members) statuses[m.user_id] = m.status
+    for (const m of members) {
+      statuses[m.user_id] = m.status
+      phoneStatuses[m.user_id] = m.phone_status
+    }
     return members
   }
 
-  return { statuses, init, subscribe, setMyStatus, loadTeam }
+  return { statuses, phoneStatuses, init, subscribe, setMyStatus, loadTeam }
 }

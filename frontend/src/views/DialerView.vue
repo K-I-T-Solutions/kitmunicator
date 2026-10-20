@@ -11,7 +11,28 @@ const {
 } = usePhone()
 
 const dialInput = ref('')
-const recentCalls = ref<Array<{ number: string; direction: string; status: string; started_at: string; duration_seconds: number }>>([])
+interface CallRecord {
+  id: number
+  caller_number: string
+  caller_name: string | null
+  callee_number: string
+  callee_name: string | null
+  direction: 'inbound' | 'outbound' | 'internal'
+  status: string
+  started_at: string
+  duration_seconds: number
+}
+
+const recentCalls = ref<CallRecord[]>([])
+
+function displayName(cdr: CallRecord): string {
+  if (cdr.direction === 'inbound') return cdr.caller_name || cdr.caller_number
+  return cdr.callee_name || cdr.callee_number
+}
+
+function dialNumber(cdr: CallRecord): string {
+  return cdr.direction === 'inbound' ? cdr.caller_number : cdr.callee_number
+}
 
 const isActive = computed(() => ['calling', 'connected', 'incoming'].includes(callState.value))
 
@@ -137,15 +158,15 @@ function directionIcon(dir: string): string {
       <ul v-else class="call-list">
         <li
           v-for="cdr in recentCalls"
-          :key="cdr.started_at"
+          :key="cdr.id"
           class="call-item"
-          @click="dialInput = cdr.number"
+          @click="dialInput = dialNumber(cdr)"
         >
           <span class="dir-icon" :class="cdr.direction">
             {{ directionIcon(cdr.direction) }}
           </span>
           <div class="call-info">
-            <span class="call-number">{{ cdr.number }}</span>
+            <span class="call-number">{{ displayName(cdr) }}</span>
             <span class="call-meta">
               {{ new Date(cdr.started_at).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) }}
               · {{ formatDuration(cdr.duration_seconds) }}

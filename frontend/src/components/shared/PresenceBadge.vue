@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 
 type Status = 'available' | 'busy' | 'away' | 'dnd'
+type PhoneStatus = 'idle' | 'ringing' | 'in_call' | 'offline'
 
 const props = defineProps<{
   userId: string
@@ -11,6 +12,7 @@ const props = defineProps<{
 
 const auth = useAuthStore()
 const status = ref<Status>('available')
+const phoneStatus = ref<PhoneStatus>('offline')
 let ws: WebSocket | null = null
 
 const statusLabels: Record<Status, string> = {
@@ -30,14 +32,16 @@ function connect() {
   }
 
   ws.onmessage = (event: MessageEvent) => {
-    const msg = JSON.parse(event.data as string) as { type: string; user_id: string; status: Status }
+    const msg = JSON.parse(event.data as string) as {
+      type: string; user_id: string; status: Status; phone_status: PhoneStatus
+    }
     if (msg.type === 'presence' && msg.user_id === props.userId) {
       status.value = msg.status
+      if (msg.phone_status) phoneStatus.value = msg.phone_status
     }
   }
 
   ws.onclose = () => {
-    // Verbindung nach 3s neu aufbauen
     setTimeout(connect, 3000)
   }
 }
@@ -61,7 +65,15 @@ watch(() => props.userId, () => {
 
 <template>
   <div class="presence-badge" :class="{ editable }">
-    <span class="dot" :class="status" :title="statusLabels[status]" />
+    <span class="dot-wrap">
+      <span class="dot" :class="status" :title="statusLabels[status]" />
+      <span
+        v-if="phoneStatus === 'ringing' || phoneStatus === 'in_call'"
+        class="phone-indicator"
+        :class="phoneStatus"
+        :title="phoneStatus === 'ringing' ? 'Klingelt' : 'Im Gespräch'"
+      >📞</span>
+    </span>
 
     <div v-if="editable" class="status-menu">
       <button
@@ -85,6 +97,12 @@ watch(() => props.userId, () => {
   align-items: center;
 }
 
+.dot-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
 .dot {
   width: 10px;
   height: 10px;
@@ -98,6 +116,23 @@ watch(() => props.userId, () => {
 .dot.dnd       { background: var(--presence-dnd); }
 
 .editable .dot { cursor: pointer; }
+
+/* Telefon-Substatus */
+.phone-indicator {
+  position: absolute;
+  bottom: -6px;
+  right: -8px;
+  font-size: 8px;
+  line-height: 1;
+  pointer-events: none;
+}
+.phone-indicator.ringing {
+  animation: ring-pulse 0.8s ease-in-out infinite alternate;
+}
+@keyframes ring-pulse {
+  from { opacity: 0.5; transform: scale(0.9); }
+  to   { opacity: 1;   transform: scale(1.1); }
+}
 
 .status-menu {
   display: none;

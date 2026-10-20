@@ -22,7 +22,7 @@ from sqlalchemy.sql import func
 from database import get_db, AsyncSessionLocal
 from keycloak import get_current_user, _get_jwks
 from config import get_settings
-from presence.models import UserPresence, PresenceStatus
+from presence.models import UserPresence, PresenceStatus, PhoneStatus
 from telephony.models import SipAccount
 
 router = APIRouter()
@@ -55,12 +55,13 @@ class PresenceManager:
             if ws in self._subscriptions:
                 self._subscriptions[ws].update(user_ids)
 
-    async def broadcast(self, user_id: str, status: PresenceStatus, updated_at: datetime) -> None:
+    async def broadcast(self, user_id: str, status: PresenceStatus, phone_status: PhoneStatus, updated_at: datetime) -> None:
         """Sendet ein Presence-Update an alle, die diesen User abonniert haben."""
         payload = json.dumps({
             "type": "presence",
             "user_id": user_id,
             "status": status.value,
+            "phone_status": phone_status.value,
             "updated_at": updated_at.isoformat(),
         })
         dead: list[WebSocket] = []
@@ -95,13 +96,20 @@ async def _authenticate_ws(token: str) -> dict[str, Any] | None:
         key = next((k for k in jwks["keys"] if k.get("kid") == kid), None)
         if key is None:
             return None
-        issuer = f"{settings.KEYCLOAK_URL}/realms/{settings.KEYCLOAK_REALM}"
-        return jose_jwt.decode(
-            token, key,
-            algorithms=["RS256"],
-            audience=settings.KEYCLOAK_CLIENT_ID,
-            issuer=issuer,
-        )
+
+        base = settings.KEYCLOAK_ISSUER or settings.KEYCLOAK_URL
+        issuer = f"{base}/realms/{settings.KEYCLOAK_REALM}"
+
+        unverified_claims = jose_jwt.get_unverified_claims(token)
+        aud = unverified_claims.get("aud")
+        if isinstance(aud, list):
+            aud = aud[0] if aud else None
+
+        payload = jose_jwt.decode(token, key, algorithms=["RS256"], issuer=issuer, audience=aud)
+
+        if payload.get("azp") != settings.KEYCLOAK_CLIENT_ID:
+            return None
+        return payload
     except (JWTError, Exception):
         return None
 
@@ -115,6 +123,7 @@ class PresenceUpdate(BaseModel):
 class PresenceOut(BaseModel):
     user_id: str
     status: PresenceStatus
+    phone_status: PhoneStatus
     updated_at: datetime
 
     model_config = {"from_attributes": True}
@@ -125,6 +134,7 @@ class TeamMemberPresence(BaseModel):
     username: str
     extension: str
     status: PresenceStatus
+    phone_status: PhoneStatus
     updated_at: datetime | None
 
 
@@ -154,6 +164,7 @@ async def get_team_presence(
             username=a.username,
             extension=a.extension,
             status=presence_map[a.user_id].status if a.user_id in presence_map else PresenceStatus.away,
+            phone_status=presence_map[a.user_id].phone_status if a.user_id in presence_map else PhoneStatus.offline,
             updated_at=presence_map[a.user_id].updated_at if a.user_id in presence_map else None,
         )
         for a in accounts
@@ -198,7 +209,7 @@ async def set_my_presence(
     await db.flush()
 
     # Alle Subscriber asynchron benachrichtigen
-    asyncio.ensure_future(manager.broadcast(user_id, presence.status, presence.updated_at))
+    asyncio.ensure_future(manager.broadcast(user_id, presence.status, presence.phone_status, presence.updated_at))
 
     return presence
 
@@ -237,7 +248,7 @@ async def ws_presence(ws: WebSocket) -> None:
                         select(UserPresence).where(UserPresence.user_id == authenticated_user_id)
                     )
                 if presence:
-                    await manager.broadcast(authenticated_user_id, presence.status, presence.updated_at)
+                    await manager.broadcast(authenticated_user_id, presence.status, presence.phone_status, presence.updated_at)
 
             elif msg_type == "subscribe":
                 if authenticated_user_id is None:
@@ -261,6 +272,7 @@ async def ws_presence(ws: WebSocket) -> None:
                             "type": "presence",
                             "user_id": p.user_id,
                             "status": p.status.value,
+                            "phone_status": p.phone_status.value,
                             "updated_at": p.updated_at.isoformat(),
                         }))
 

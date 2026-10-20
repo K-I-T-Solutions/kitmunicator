@@ -1,11 +1,12 @@
+import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
 from database import engine, Base
-
-# Router-Imports — werden nach und nach befüllt
+from services.asterisk_ari import ari_consumer
 from telephony.router import router as telephony_router
 from presence.router import router as presence_router
 from contacts.router import router as contacts_router
@@ -15,11 +16,18 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Tabellen anlegen (nur Dev — Prod läuft über Alembic)
     if settings.DEBUG:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+
+    ari_task = asyncio.create_task(ari_consumer())
+
     yield
+
+    ari_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await ari_task
+
     await engine.dispose()
 
 

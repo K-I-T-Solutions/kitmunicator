@@ -4,6 +4,7 @@ from typing import Any
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,7 +56,9 @@ class CallRecordOut(BaseModel):
     id: int
     asterisk_unique_id: str
     caller_number: str
+    caller_name: str | None
     callee_number: str
+    callee_name: str | None
     direction: CallDirection
     status: CallStatus
     duration_seconds: int
@@ -191,9 +194,13 @@ async def list_cdr(
     if not account:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kein SIP-Account gefunden")
 
+    # Alle Anrufe wo der User Anrufer ODER Angerufener war
     result = await db.scalars(
         select(CallRecord)
-        .where(CallRecord.sip_account_id == account.id)
+        .where(
+            (CallRecord.sip_account_id == account.id)
+            | (CallRecord.callee_number == account.extension)
+        )
         .order_by(CallRecord.started_at.desc())
         .limit(limit)
         .offset(offset)
@@ -283,6 +290,14 @@ class IncomingCallWebhook(BaseModel):
     secret: str = ""
 
 
+class VoicemailWebhook(BaseModel):
+    extension: str
+    caller_number: str
+    caller_name: str = ""
+    duration: int = 0
+    file_path: str = ""
+
+
 @router.post("/webhook/incoming-call", status_code=status.HTTP_204_NO_CONTENT)
 async def incoming_call_webhook(
     body: IncomingCallWebhook,
@@ -329,3 +344,51 @@ async def incoming_call_webhook(
         )
     except FCMError as e:
         logger.error("[FCM] Fehler beim Push: %s (HTTP %s)", e.detail, e.status_code)
+
+
+@router.get("/internal/ext-lookup/{extension}", response_class=PlainTextResponse)
+async def extension_lookup(
+    extension: str,
+    db: AsyncSession = Depends(get_db),
+) -> str:
+    """Interner Asterisk-Dialplan-Lookup: Durchwahl → SIP-Username.
+    Kein Auth — nur aus dem internen Docker-Netz erreichbar."""
+    account = await db.scalar(
+        select(SipAccount).where(
+            SipAccount.extension == extension,
+            SipAccount.is_active == True,
+        )
+    )
+    return account.username if account else ""
+
+
+@router.post("/webhook/voicemail", status_code=status.HTTP_204_NO_CONTENT)
+async def voicemail_webhook(
+    body: VoicemailWebhook,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Asterisk ruft diesen Endpoint nach jeder aufgezeichneten Voicemail auf."""
+    if body.duration < 1:
+        return
+
+    account = await db.scalar(
+        select(SipAccount).where(SipAccount.extension == body.extension)
+    )
+    if not account:
+        logger.warning("[Voicemail] Kein Account für Durchwahl %s", body.extension)
+        return
+
+    voicemail = Voicemail(
+        sip_account_id=account.id,
+        caller_number=body.caller_number,
+        file_path=body.file_path,
+        duration_seconds=body.duration,
+        is_read=False,
+        received_at=datetime.utcnow(),
+    )
+    db.add(voicemail)
+    await db.commit()
+    logger.info(
+        "[Voicemail] %s ← %s (%ds) gespeichert",
+        account.username, body.caller_number, body.duration,
+    )

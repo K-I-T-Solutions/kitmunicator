@@ -131,3 +131,27 @@ async def hangup_channel(channel_id: str) -> None:
         resp = await client.delete(f"/ari/channels/{channel_id}")
         if resp.status_code not in (200, 204, 404):
             await _raise_for_ari(resp)
+
+
+async def sync_sip_accounts_to_asterisk() -> None:
+    """Alle aktiven SipAccounts aus der DB in Asterisk (re-)registrieren.
+
+    Wird nach jedem ARI-Reconnect aufgerufen, damit dynamisch angelegte
+    Endpoints einen Asterisk-Neustart überleben.
+    """
+    import logging
+    from sqlalchemy import select
+    from database import AsyncSessionLocal
+    from telephony.models import SipAccount
+
+    log = logging.getLogger(__name__)
+
+    async with AsyncSessionLocal() as db:
+        accounts = await db.scalars(select(SipAccount).where(SipAccount.is_active == True))
+        for account in accounts.all():
+            try:
+                password = decrypt_password(account.password_encrypted)
+                await create_sip_endpoint(account.username, password, account.extension)
+                log.info("SIP-Sync: %s (%s) registriert", account.username, account.extension)
+            except ARIError as e:
+                log.warning("SIP-Sync fehlgeschlagen für %s: %s", account.username, e.detail)

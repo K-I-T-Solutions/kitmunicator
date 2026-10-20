@@ -131,6 +131,7 @@ export const usePhoneStore = defineStore('phone', () => {
       authorizationPassword: password,
       displayName: auth.displayName,
       sessionDescriptionHandlerFactoryOptions: {
+        iceGatheringTimeout: 500,
         peerConnectionConfiguration: {
           iceServers: [
             { urls: `stun:${import.meta.env.VITE_TURN_HOST}:3478` },
@@ -210,10 +211,14 @@ export const usePhoneStore = defineStore('phone', () => {
     if (!activeSession.value) return
     const session = activeSession.value
     if (session instanceof Inviter) {
-      await session.cancel().catch(() => session.bye())
+      if (session.state === SessionState.Established) {
+        await session.bye().catch(() => {})
+      } else {
+        await session.cancel().catch(() => {})
+      }
     } else if (session instanceof Invitation) {
-      if (session.state === SessionState.Established) await session.bye()
-      else await session.reject()
+      if (session.state === SessionState.Established) await session.bye().catch(() => {})
+      else await session.reject().catch(() => {})
     }
   }
 
