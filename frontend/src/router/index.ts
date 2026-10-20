@@ -14,19 +14,19 @@ const router = createRouter({
       path: '/dialer',
       name: 'dialer',
       component: () => import('@/views/DialerView.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, title: 'Telefon' },
     },
     {
       path: '/contacts',
       name: 'contacts',
       component: () => import('@/views/ContactsView.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, title: 'Kontakte' },
     },
     {
       path: '/settings',
       name: 'settings',
       component: () => import('@/views/SettingsView.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, title: 'Einstellungen' },
     },
   ],
 })

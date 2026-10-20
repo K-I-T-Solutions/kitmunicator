@@ -1,4 +1,4 @@
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 
 export type PresenceStatus = 'available' | 'busy' | 'away' | 'dnd'
@@ -24,6 +24,8 @@ export interface TeamMember {
 
 const statuses = reactive<Record<string, PresenceStatus>>({})
 const phoneStatuses = reactive<Record<string, PhoneStatus>>({})
+// Alle aktiven SIP-User inkl. des eigenen Accounts – gefüllt von loadTeam()
+const team = ref<TeamMember[]>([])
 const subscribedIds = new Set<string>()
 let ws: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -99,8 +101,15 @@ export function usePresence() {
       statuses[m.user_id] = m.status
       phoneStatuses[m.user_id] = m.phone_status
     }
+    team.value = members
     return members
   }
 
-  return { statuses, phoneStatuses, init, subscribe, setMyStatus, loadTeam }
+  /** Durchwahl → Team-Mitglied (für Anrufer-Namen) */
+  function memberByExtension(extension: string | null | undefined): TeamMember | undefined {
+    if (!extension) return undefined
+    return team.value.find(m => m.extension === extension)
+  }
+
+  return { statuses, phoneStatuses, team, init, subscribe, setMyStatus, loadTeam, memberByExtension }
 }

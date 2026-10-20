@@ -6,6 +6,7 @@ Internes SIP/WebRTC-Kommunikationssystem für K.I.T. Solutions.
 
 - **Backend:** FastAPI + PostgreSQL + Alembic (async SQLAlchemy), Python 3.12
 - **Frontend:** Vue 3 (Composition API), SIP.js 0.21.x, Vite dev server
+- **UI:** Tailwind 3 + lucide-vue-next. Theme-Farben als CSS-Variablen (`--c-*`) in `frontend/src/assets/global.css`, Hell/Dunkel über `.dark` auf `<html>`. Schriften lokal via `@fontsource` (kein Google Fonts)
 - **Telefonie:** Asterisk 20.x, PJSIP WebRTC (Port 8089), ARI via App `kitmunicator`
 - **Auth:** Keycloak SSO, Realm `kit`, Client `kitmunicator`
 - **Reverse Proxy:** Caddy → `sip.kitmunicator.intern.phudevelopement.xyz`

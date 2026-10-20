@@ -9,6 +9,7 @@ export function usePhone() {
   const {
     callState,
     remoteNumber,
+    remoteName,
     isMuted,
     isOnHold,
     callDurationSeconds,
@@ -32,9 +33,9 @@ export function usePhone() {
     await store.setup(sipUri, password, wsServer)
   }
 
-  async function call(target: string): Promise<void> {
+  async function call(target: string, name?: string): Promise<void> {
     if (!isRegistered.value) await register()
-    await store.call(target)
+    await store.call(target, name)
   }
 
   function hangup(): Promise<void> {
@@ -63,6 +64,7 @@ export function usePhone() {
   return {
     callState,
     remoteNumber,
+    remoteName,
     isMuted,
     isOnHold,
     callDurationSeconds,
