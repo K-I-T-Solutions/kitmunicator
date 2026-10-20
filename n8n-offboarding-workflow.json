@@ -1,0 +1,264 @@
+{
+  "name": "KITmunicator – User Offboarding",
+  "active": true,
+  "meta": {
+    "instanceId": "kitmunicator-offboarding-v1"
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "nodes": [
+    {
+      "id": "01-webhook-trigger",
+      "name": "Keycloak: User Deleted",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "keycloak-user-deleted",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "keycloak-user-deleted",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "responseCode": 200,
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "cred-webhook-secret",
+          "name": "Keycloak Webhook Secret"
+        }
+      }
+    },
+    {
+      "id": "02-extract-user",
+      "name": "User-Daten extrahieren",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300],
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "userId",
+              "value": "={{ $json.body.userId }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "username",
+              "value": "={{ $json.body.username }}",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "realmId",
+              "value": "={{ $json.body.realmId }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "03-keycloak-token",
+      "name": "Keycloak: Service-Account-Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KEYCLOAK_URL }}/realms/{{ $env.KEYCLOAK_REALM }}/protocol/openid-connect/token",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "grant_type", "value": "client_credentials" },
+            { "name": "client_id", "value": "={{ $env.KEYCLOAK_ADMIN_CLIENT_ID }}" },
+            { "name": "client_secret", "value": "={{ $env.KEYCLOAK_ADMIN_CLIENT_SECRET }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "04-save-token",
+      "name": "Token merken",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [900, 300],
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b1",
+              "name": "adminToken",
+              "value": "={{ $json.access_token }}",
+              "type": "string"
+            },
+            {
+              "id": "b2",
+              "name": "userId",
+              "value": "={{ $('User-Daten extrahieren').item.json.userId }}",
+              "type": "string"
+            },
+            {
+              "id": "b3",
+              "name": "username",
+              "value": "={{ $('User-Daten extrahieren').item.json.username }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "05-delete-sip",
+      "name": "KITmunicator: SIP-Account löschen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 200],
+      "parameters": {
+        "method": "DELETE",
+        "url": "={{ $env.KITMUNICATOR_API_URL }}/telephony/accounts/{{ $json.userId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.adminToken }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "06-deactivate-workmate",
+      "name": "WorkmateOS: Employee deaktivieren",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 400],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.WORKMATE_API_URL }}/api/v1/employees/{{ $('Token merken').item.json.userId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.WORKMATE_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={ \"is_active\": false }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "07-merge",
+      "name": "Ergebnisse zusammenführen",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1340, 300],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      }
+    },
+    {
+      "id": "08-success-log",
+      "name": "Offboarding abgeschlossen",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1560, 300],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "status",
+              "value": "offboarded",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "username",
+              "value": "={{ $('Token merken').item.json.username }}",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Keycloak: User Deleted": {
+      "main": [[{ "node": "User-Daten extrahieren", "type": "main", "index": 0 }]]
+    },
+    "User-Daten extrahieren": {
+      "main": [[{ "node": "Keycloak: Service-Account-Token", "type": "main", "index": 0 }]]
+    },
+    "Keycloak: Service-Account-Token": {
+      "main": [[{ "node": "Token merken", "type": "main", "index": 0 }]]
+    },
+    "Token merken": {
+      "main": [
+        [
+          { "node": "KITmunicator: SIP-Account löschen", "type": "main", "index": 0 },
+          { "node": "WorkmateOS: Employee deaktivieren", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "KITmunicator: SIP-Account löschen": {
+      "main": [[{ "node": "Ergebnisse zusammenführen", "type": "main", "index": 0 }]]
+    },
+    "WorkmateOS: Employee deaktivieren": {
+      "main": [[{ "node": "Ergebnisse zusammenführen", "type": "main", "index": 1 }]]
+    },
+    "Ergebnisse zusammenführen": {
+      "main": [[{ "node": "Offboarding abgeschlossen", "type": "main", "index": 0 }]]
+    }
+  }
+}
