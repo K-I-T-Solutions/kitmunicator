@@ -88,6 +88,11 @@ services:
     environment:
       # Externe IP für ICE-Kandidat — ASTERISK_LOCAL_IP wird automatisch ermittelt
       ASTERISK_PUBLIC_IP: ${ASTERISK_PUBLIC_IP}
+      # Realtime: Nutzer/Mailboxen aus der kitmunicator-DB
+      ASTERISK_DB_HOST: central_postgres
+      ASTERISK_DB_NAME: kitmunicator
+      ASTERISK_DB_USER: ${ASTERISK_DB_USER}
+      ASTERISK_DB_PASSWORD: ${ASTERISK_DB_PASSWORD}
     # network_mode host wäre ideal für RTP/NAT, aber bricht
     # core_network-Kommunikation – daher explizite Port-Bindings
     ports:

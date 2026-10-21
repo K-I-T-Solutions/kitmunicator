@@ -10,10 +10,22 @@ sed "s|\${ASTERISK_LOCAL_IP}|${ASTERISK_LOCAL_IP}|g; \
      s|\${ASTERISK_PUBLIC_IP}|${ASTERISK_PUBLIC_IP}|g" \
   /etc/asterisk-tpl/rtp.conf.tmpl > /etc/asterisk/rtp.conf
 
+# Realtime-DB-Zugang aus Umgebungsvariablen (Passwort nicht im Repo)
+: "${ASTERISK_DB_HOST:=central_postgres}" "${ASTERISK_DB_PORT:=5432}" "${ASTERISK_DB_NAME:=kitmunicator}"
+sed "s|\${ASTERISK_DB_HOST}|${ASTERISK_DB_HOST}|g; \
+     s|\${ASTERISK_DB_PORT}|${ASTERISK_DB_PORT}|g; \
+     s|\${ASTERISK_DB_NAME}|${ASTERISK_DB_NAME}|g; \
+     s|\${ASTERISK_DB_USER}|${ASTERISK_DB_USER}|g; \
+     s|\${ASTERISK_DB_PASSWORD}|${ASTERISK_DB_PASSWORD}|g" \
+  /etc/asterisk-tpl/res_pgsql.conf.tmpl > /etc/asterisk/res_pgsql.conf
+
 # Alle anderen Config-Dateien aus dem Template-Verzeichnis übernehmen
 cp /etc/asterisk-tpl/*.conf /etc/asterisk/ 2>/dev/null || true
 # rtp.conf wurde bereits aus Template generiert – Template-Kopie entfernen falls vorhanden
-rm -f /etc/asterisk/rtp.conf.tmpl
+rm -f /etc/asterisk/rtp.conf.tmpl /etc/asterisk/res_pgsql.conf.tmpl
+# Enthält das DB-Passwort
+chown asterisk:asterisk /etc/asterisk/res_pgsql.conf
+chmod 600 /etc/asterisk/res_pgsql.conf
 
 # Deutsche Ansagen ins Sounds-Volume verlinken (Volume verdeckt den Image-Inhalt)
 ln -sfn /usr/share/asterisk/sounds/de /var/lib/asterisk/sounds/de

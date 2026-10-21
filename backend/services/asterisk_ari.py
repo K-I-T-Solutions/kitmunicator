@@ -23,7 +23,6 @@ from config import get_settings
 from database import AsyncSessionLocal
 from presence.models import UserPresence, PhoneStatus
 from telephony.models import SipAccount, CallRecord, CallDirection, CallStatus, Voicemail
-from telephony.service import sync_sip_accounts_to_asterisk
 from telephony.voicemail_store import sync_mailbox
 
 log = logging.getLogger(__name__)
@@ -353,10 +352,6 @@ async def ari_consumer() -> None:
                 backoff = 1
                 _active_channels.clear()
                 _pending_calls.clear()
-
-                # Nach (Re-)Connect alle SIP-Accounts in Asterisk registrieren,
-                # damit dynamische Endpoints einen Asterisk-Neustart überleben.
-                asyncio.ensure_future(sync_sip_accounts_to_asterisk())
 
                 async for raw in ws:
                     try:

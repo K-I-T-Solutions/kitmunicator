@@ -1,4 +1,5 @@
 """Asterisk ARI REST Client — alle Operationen async via httpx."""
+import hashlib
 import secrets
 from typing import Any
 
@@ -49,71 +50,25 @@ async def _raise_for_ari(response: httpx.Response) -> None:
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
+# Endpoints, Auths und AORs liest Asterisk per Realtime aus Views auf
+# sip_accounts (Migration 0006) — anlegen/sperren ist ein reines DB-Update.
 
-async def create_sip_endpoint(username: str, password: str, extension: str) -> dict[str, Any]:
-    """Legt einen PJSIP-Endpoint in Asterisk an."""
+# Muss zur Realm in der View ps_auths passen
+SIP_REALM = "asterisk"
+
+
+def sip_md5_cred(username: str, password: str) -> str:
+    """Digest-Hash für ps_auths (auth_type=md5) — Asterisk braucht kein Klartext-Passwort."""
+    return hashlib.md5(f"{username}:{SIP_REALM}:{password}".encode()).hexdigest()
+
+
+async def list_pjsip_endpoints() -> list[dict[str, Any]]:
+    """Alle PJSIP-Endpoints inkl. Realtime, mit state online/offline."""
     settings = get_settings()
     async with _get_ari_client(settings) as client:
-        # Endpoint anlegen
-        resp = await client.put(
-            f"/ari/asterisk/config/dynamic/res_pjsip/endpoint/{username}",
-            json={
-                "fields": [
-                    {"attribute": "transport", "value": "transport-wss"},
-                    {"attribute": "context", "value": "internal"},
-                    {"attribute": "disallow", "value": "all"},
-                    {"attribute": "allow", "value": "opus,g722,ulaw,alaw"},
-                    {"attribute": "auth", "value": username},
-                    {"attribute": "aors", "value": username},
-                    {"attribute": "dtmf_mode", "value": "rfc4733"},
-                    {"attribute": "ice_support", "value": "yes"},
-                    {"attribute": "media_use_received_transport", "value": "yes"},
-                    {"attribute": "force_rport", "value": "yes"},
-                    {"attribute": "webrtc", "value": "yes"},
-                ]
-            },
-        )
+        resp = await client.get("/ari/endpoints/PJSIP")
         await _raise_for_ari(resp)
-
-        # Auth-Objekt anlegen
-        resp = await client.put(
-            f"/ari/asterisk/config/dynamic/res_pjsip/auth/{username}",
-            json={
-                "fields": [
-                    {"attribute": "auth_type", "value": "userpass"},
-                    {"attribute": "username", "value": username},
-                    {"attribute": "password", "value": password},
-                ]
-            },
-        )
-        await _raise_for_ari(resp)
-
-        # AOR anlegen (Address of Record)
-        resp = await client.put(
-            f"/ari/asterisk/config/dynamic/res_pjsip/aor/{username}",
-            json={
-                "fields": [
-                    {"attribute": "max_contacts", "value": "3"},
-                    {"attribute": "remove_existing", "value": "yes"},
-                ]
-            },
-        )
-        await _raise_for_ari(resp)
-
-        return {"endpoint": username, "extension": extension}
-
-
-async def delete_sip_endpoint(username: str) -> None:
-    """Löscht PJSIP-Endpoint, Auth und AOR aus Asterisk."""
-    settings = get_settings()
-    async with _get_ari_client(settings) as client:
-        for object_type in ("endpoint", "auth", "aor"):
-            resp = await client.delete(
-                f"/ari/asterisk/config/dynamic/res_pjsip/{object_type}/{username}"
-            )
-            # 404 ist kein Fehler — Objekt war schon weg
-            if resp.status_code not in (200, 204, 404):
-                await _raise_for_ari(resp)
+        return resp.json()
 
 
 async def get_active_channels() -> list[dict[str, Any]]:
@@ -131,27 +86,3 @@ async def hangup_channel(channel_id: str) -> None:
         resp = await client.delete(f"/ari/channels/{channel_id}")
         if resp.status_code not in (200, 204, 404):
             await _raise_for_ari(resp)
-
-
-async def sync_sip_accounts_to_asterisk() -> None:
-    """Alle aktiven SipAccounts aus der DB in Asterisk (re-)registrieren.
-
-    Wird nach jedem ARI-Reconnect aufgerufen, damit dynamisch angelegte
-    Endpoints einen Asterisk-Neustart überleben.
-    """
-    import logging
-    from sqlalchemy import select
-    from database import AsyncSessionLocal
-    from telephony.models import SipAccount
-
-    log = logging.getLogger(__name__)
-
-    async with AsyncSessionLocal() as db:
-        accounts = await db.scalars(select(SipAccount).where(SipAccount.is_active == True))
-        for account in accounts.all():
-            try:
-                password = decrypt_password(account.password_encrypted)
-                await create_sip_endpoint(account.username, password, account.extension)
-                log.info("SIP-Sync: %s (%s) registriert", account.username, account.extension)
-            except ARIError as e:
-                log.warning("SIP-Sync fehlgeschlagen für %s: %s", account.username, e.detail)

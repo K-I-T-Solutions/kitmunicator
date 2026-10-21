@@ -30,8 +30,13 @@ class SipAccount(Base):
     username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     # Durchwahl z.B. "1001"
     extension: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
-    # Fernet-verschlüsseltes SIP-Passwort
+    # Fernet-verschlüsseltes SIP-Passwort (für /accounts/me/credentials)
     password_encrypted: Mapped[str] = mapped_column(String(500), nullable=False)
+    # MD5(username:realm:password) für Asterisk (View ps_auths)
+    sip_md5_cred: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Anzeigename (CallerID) und E-Mail, aus Keycloak übernommen
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # FCM-Push-Token des Geräts — wird von der App nach Login gesetzt
     fcm_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -84,3 +89,4 @@ class Voicemail(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     sip_account: Mapped["SipAccount"] = relationship(back_populates="voicemails")
+

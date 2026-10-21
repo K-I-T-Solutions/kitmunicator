@@ -14,12 +14,10 @@ from database import get_db
 from keycloak import get_current_user, require_role
 from telephony.models import SipAccount, CallRecord, Voicemail, CallDirection, CallStatus
 from telephony.service import (
-    create_sip_endpoint,
-    delete_sip_endpoint,
     generate_sip_password,
     encrypt_password,
     decrypt_password,
-    ARIError,
+    sip_md5_cred,
 )
 from telephony.voicemail_store import sync_mailbox, resolve_audio
 from push.fcm_service import send_incoming_call_push, FCMError
@@ -97,16 +95,13 @@ async def create_account(
 
     password = generate_sip_password()
 
-    try:
-        await create_sip_endpoint(body.username, password, body.extension)
-    except ARIError as e:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Asterisk-Fehler: {e.detail}")
-
+    # Asterisk sieht den Account sofort über die Realtime-Views
     account = SipAccount(
         user_id=target_user_id,
         username=body.username,
         extension=body.extension,
         password_encrypted=encrypt_password(password),
+        sip_md5_cred=sip_md5_cred(body.username, password),
     )
     db.add(account)
     await db.flush()
@@ -173,11 +168,7 @@ async def delete_account(
     if not account:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "SIP-Account nicht gefunden")
 
-    try:
-        await delete_sip_endpoint(account.username)
-    except ARIError as e:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Asterisk-Fehler: {e.detail}")
-
+    # Verschwindet damit auch aus den Realtime-Views
     await db.delete(account)
 
 
@@ -366,3 +357,4 @@ async def extension_lookup(
         )
     )
     return account.username if account else ""
+

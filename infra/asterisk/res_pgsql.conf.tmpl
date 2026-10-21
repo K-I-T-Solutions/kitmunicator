@@ -1,0 +1,11 @@
+; Realtime-Datenbank (central_postgres) — vom Entrypoint aus Umgebungsvariablen erzeugt.
+; Asterisk liest hier nur Views (ps_endpoints, ps_auths, ps_aors, voicemail_users).
+[general]
+dbhost = ${ASTERISK_DB_HOST}
+dbport = ${ASTERISK_DB_PORT}
+dbname = ${ASTERISK_DB_NAME}
+dbuser = ${ASTERISK_DB_USER}
+dbpass = ${ASTERISK_DB_PASSWORD}
+dbappname = asterisk
+; Views lassen sich nicht anpassen – fehlende Spalten nur melden
+requirements = warn
