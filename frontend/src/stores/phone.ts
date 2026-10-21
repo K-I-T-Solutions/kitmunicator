@@ -35,6 +35,8 @@ export const usePhoneStore = defineStore('phone', () => {
   // damit Chrome die Autoplay-Policy nicht blockiert.
   let _audioCtx: AudioContext | null = null
   let _sourceNode: MediaStreamAudioSourceNode | null = null
+  const _keepAliveAudio = new Audio()
+  _keepAliveAudio.muted = true
 
   const isRegistered = computed(() => callState.value === 'registered')
   const isBusy = computed(() => ['calling', 'incoming', 'connected'].includes(callState.value))
@@ -66,8 +68,13 @@ export const usePhoneStore = defineStore('phone', () => {
         return
       }
       try {
+        const stream = new MediaStream([track])
+        // Chrome liefert Remote-WebRTC-Audio nur an den AudioContext, wenn der
+        // Stream zusätzlich an einem Media-Element hängt – stumm, damit nichts doppelt spielt
+        _keepAliveAudio.srcObject = stream
+        _keepAliveAudio.play().catch(() => {})
         _sourceNode?.disconnect()
-        _sourceNode = _audioCtx.createMediaStreamSource(new MediaStream([track]))
+        _sourceNode = _audioCtx.createMediaStreamSource(stream)
         _sourceNode.connect(_audioCtx.destination)
         console.log('[Phone] AudioContext source verbunden – Audio sollte spielen')
       } catch (err) {

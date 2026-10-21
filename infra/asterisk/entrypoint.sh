@@ -17,6 +17,11 @@ rm -f /etc/asterisk/rtp.conf.tmpl
 
 # Deutsche Ansagen ins Sounds-Volume verlinken (Volume verdeckt den Image-Inhalt)
 ln -sfn /usr/share/asterisk/sounds/de /var/lib/asterisk/sounds/de
+ln -sfn /usr/share/asterisk/sounds/en_US_f_Allison /var/lib/asterisk/sounds/en
+# Sprachneutrale Töne, die prompt-de nicht mitbringt
+for f in beep beeperr; do
+  ln -sf /usr/share/asterisk/sounds/en_US_f_Allison/$f.gsm /var/lib/asterisk/sounds/$f.gsm
+done
 
 # Spool-Volume für das Backend lesbar machen (Paket legt es mit 0750 an)
 mkdir -p /var/spool/asterisk/voicemail
