@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { usePhone } from '@/composables/usePhone'
 import { usePresence } from '@/composables/usePresence'
 import { useActiveCall } from '@/composables/useActiveCall'
+import { useVoicemail } from '@/composables/useVoicemail'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import AppTopBar from '@/components/layout/AppTopBar.vue'
 import BottomTabBar from '@/components/layout/BottomTabBar.vue'
@@ -16,6 +17,7 @@ const auth = useAuthStore()
 const { callState, register } = usePhone()
 const { init: initPresence, loadTeam, subscribe } = usePresence()
 const { hasActiveCall } = useActiveCall()
+const { startPolling: pollVoicemail } = useVoicemail()
 const route = useRoute()
 
 onMounted(async () => {
@@ -23,6 +25,7 @@ onMounted(async () => {
   initPresence()
   // Team früh laden: Sidebar (eigene Durchwahl) und Anrufer-Namen brauchen es
   loadTeam().then(members => subscribe(members.map(m => m.user_id)))
+  pollVoicemail()
   await register()
 })
 

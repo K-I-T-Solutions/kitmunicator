@@ -15,13 +15,14 @@ Internes SIP/WebRTC-Kommunikationssystem für K.I.T. Solutions.
 
 - KITmunicator Backend + Asterisk auf cisco (192.168.178.x / Homelab)
 - TURN: coturn auf 192.168.178.100:3478
-- Aktueller Alembic-Stand: Migration 0004
+- Aktueller Alembic-Stand: Migration 0005
 
 ## Abgeschlossene Features
 
 - Presence ↔ Asterisk Sync via ARI WebSocket (ChannelCreated/StateChange/Destroyed)
 - CDR-System: CallRecord bei ChannelDestroyed, caller_name + callee_name aus SipAccount-Lookup
 - Voicemail (deutsche Sounds), Trunk-Channel-Tracking
+- Voicemail im Web: Backend liest den Asterisk-Spool (Volume `asterisk_voicemail*`, im Backend read-only) und gleicht ihn bei `GET /telephony/voicemail` mit der DB ab (`telephony/voicemail_store.py`, Schlüssel `msg_id`). Kein Webhook mehr
 - Automatisches SIP-Onboarding via n8n-Workflow (Dialplan dynamisch, ext-lookup Endpoint)
 - Offboarding-Workflow (n8n-offboarding-workflow.json)
 - Nextcloud Talk auf file-01 (cloud.kit-it-koblenz.de) mit Keycloak SSO + TURN

@@ -15,6 +15,14 @@ cp /etc/asterisk-tpl/*.conf /etc/asterisk/ 2>/dev/null || true
 # rtp.conf wurde bereits aus Template generiert – Template-Kopie entfernen falls vorhanden
 rm -f /etc/asterisk/rtp.conf.tmpl
 
+# Deutsche Ansagen ins Sounds-Volume verlinken (Volume verdeckt den Image-Inhalt)
+ln -sfn /usr/share/asterisk/sounds/de /var/lib/asterisk/sounds/de
+
+# Spool-Volume für das Backend lesbar machen (Paket legt es mit 0750 an)
+mkdir -p /var/spool/asterisk/voicemail
+chown asterisk:asterisk /var/spool/asterisk/voicemail
+chmod 755 /var/spool/asterisk/voicemail
+
 echo "[entrypoint] rtp.conf generiert: ice_host_candidate=${ASTERISK_LOCAL_IP}:${ASTERISK_PUBLIC_IP}"
 
 # Original-Entrypoint des Basis-Images aufrufen

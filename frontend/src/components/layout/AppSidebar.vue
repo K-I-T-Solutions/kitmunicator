@@ -5,6 +5,7 @@ import { LogOut, Moon, Sun } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { usePresence, STATUS_LABELS } from '@/composables/usePresence'
 import { useTheme } from '@/composables/useTheme'
+import { useVoicemail } from '@/composables/useVoicemail'
 import AppLogo from '@/components/ui/AppLogo.vue'
 import UserAvatar from '@/components/ui/UserAvatar.vue'
 import PresenceDot from '@/components/ui/PresenceDot.vue'
@@ -14,6 +15,7 @@ const route = useRoute()
 const auth = useAuthStore()
 const { statuses, team } = usePresence()
 const { theme, toggle: toggleTheme } = useTheme()
+const { unreadCount } = useVoicemail()
 
 const myStatus = computed(() => (auth.userId && statuses[auth.userId]) || 'available')
 const myExtension = computed(() => team.value.find(m => m.user_id === auth.userId)?.extension)
@@ -46,7 +48,12 @@ const myExtension = computed(() => team.value.find(m => m.user_id === auth.userI
         :aria-current="isActive(item, route.path) ? 'page' : undefined"
       >
         <component :is="item.icon" class="h-5 w-5 shrink-0" />
-        <span>{{ item.label }}</span>
+        <span class="flex-1">{{ item.label }}</span>
+        <span
+          v-if="item.badge === 'voicemail' && unreadCount"
+          class="tabular min-w-[1.25rem] rounded-full bg-accent-500 px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none text-white"
+          :aria-label="`${unreadCount} neu`"
+        >{{ unreadCount }}</span>
       </RouterLink>
     </nav>
 

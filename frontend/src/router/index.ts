@@ -17,6 +17,12 @@ const router = createRouter({
       meta: { requiresAuth: true, title: 'Telefon' },
     },
     {
+      path: '/voicemail',
+      name: 'voicemail',
+      component: () => import('@/views/VoicemailView.vue'),
+      meta: { requiresAuth: true, title: 'Voicemail' },
+    },
+    {
       path: '/contacts',
       name: 'contacts',
       component: () => import('@/views/ContactsView.vue'),

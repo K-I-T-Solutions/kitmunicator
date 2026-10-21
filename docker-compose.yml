@@ -22,6 +22,7 @@ volumes:
   asterisk_config:
   asterisk_sounds:
   asterisk_logs:
+  asterisk_voicemail:
 
 services:
 
@@ -58,6 +59,8 @@ services:
       FCM_PROJECT_ID: ${FCM_PROJECT_ID:-kitmunicator}
     volumes:
       - ./mobile/kitmunicator-firebase-adminsdk-fbsvc-72c93a0022.json:/app/firebase-adminsdk.json:ro
+      # Voicemail-Nachrichten aus Asterisk (nur lesen)
+      - asterisk_voicemail:/var/spool/asterisk/voicemail:ro
     depends_on:
       kitmunicator_postgres:
         condition: service_healthy
@@ -119,6 +122,7 @@ services:
       - asterisk_config:/var/lib/asterisk
       - asterisk_sounds:/var/lib/asterisk/sounds
       - asterisk_logs:/var/log/asterisk
+      - asterisk_voicemail:/var/spool/asterisk/voicemail
     networks:
       - kitmunicator_net
       - traefik_net

@@ -72,8 +72,11 @@ class Voicemail(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     sip_account_id: Mapped[int] = mapped_column(ForeignKey("sip_accounts.id"), nullable=False, index=True)
+    # msg_id aus der Asterisk-Metadatei — bleibt beim Umnummerieren gleich
+    asterisk_msg_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     caller_number: Mapped[str] = mapped_column(String(50), nullable=False)
-    # Pfad zur Audiodatei im Asterisk-Dateisystem
+    caller_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Pfad zur Audiodatei im eingehängten Asterisk-Spool
     file_path: Mapped[str] = mapped_column(String(500), nullable=False)
     duration_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

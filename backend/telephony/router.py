@@ -4,7 +4,7 @@ from typing import Any
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,7 @@ from telephony.service import (
     decrypt_password,
     ARIError,
 )
+from telephony.voicemail_store import sync_mailbox, resolve_audio
 from push.fcm_service import send_incoming_call_push, FCMError
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,7 @@ class CallRecordOut(BaseModel):
 class VoicemailOut(BaseModel):
     id: int
     caller_number: str
+    caller_name: str | None
     duration_seconds: int
     is_read: bool
     received_at: datetime
@@ -222,6 +224,8 @@ async def list_voicemail(
     if not account:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kein SIP-Account gefunden")
 
+    await sync_mailbox(db, account)
+
     query = select(Voicemail).where(Voicemail.sip_account_id == account.id)
     if unread_only:
         query = query.where(Voicemail.is_read == False)  # noqa: E712
@@ -231,29 +235,39 @@ async def list_voicemail(
     return list(result.all())
 
 
+async def _get_own_voicemail(db: AsyncSession, user_id: str, voicemail_id: int) -> Voicemail:
+    vm = await db.scalar(
+        select(Voicemail)
+        .join(SipAccount, Voicemail.sip_account_id == SipAccount.id)
+        .where(Voicemail.id == voicemail_id, SipAccount.user_id == user_id)
+    )
+    if not vm:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Voicemail nicht gefunden")
+    return vm
+
+
 @router.patch("/voicemail/{voicemail_id}/read", response_model=VoicemailOut)
 async def mark_voicemail_read(
     voicemail_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ) -> Voicemail:
-    account = await db.scalar(
-        select(SipAccount).where(SipAccount.user_id == current_user["sub"])
-    )
-    if not account:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kein SIP-Account gefunden")
-
-    vm = await db.scalar(
-        select(Voicemail).where(
-            Voicemail.id == voicemail_id,
-            Voicemail.sip_account_id == account.id,
-        )
-    )
-    if not vm:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Voicemail nicht gefunden")
-
+    vm = await _get_own_voicemail(db, current_user["sub"], voicemail_id)
     vm.is_read = True
     return vm
+
+
+@router.get("/voicemail/{voicemail_id}/audio", response_class=FileResponse)
+async def get_voicemail_audio(
+    voicemail_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> FileResponse:
+    vm = await _get_own_voicemail(db, current_user["sub"], voicemail_id)
+    path = resolve_audio(vm)
+    if not path:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Audiodatei nicht gefunden")
+    return FileResponse(path, media_type="audio/wav")
 
 
 # ── FCM Push-Token ────────────────────────────────────────────────────────────
@@ -288,14 +302,6 @@ class IncomingCallWebhook(BaseModel):
     uuid: str = ""
     # Optionaler Webhook-Secret-Header zur Absicherung
     secret: str = ""
-
-
-class VoicemailWebhook(BaseModel):
-    extension: str
-    caller_number: str
-    caller_name: str = ""
-    duration: int = 0
-    file_path: str = ""
 
 
 @router.post("/webhook/incoming-call", status_code=status.HTTP_204_NO_CONTENT)
@@ -360,35 +366,3 @@ async def extension_lookup(
         )
     )
     return account.username if account else ""
-
-
-@router.post("/webhook/voicemail", status_code=status.HTTP_204_NO_CONTENT)
-async def voicemail_webhook(
-    body: VoicemailWebhook,
-    db: AsyncSession = Depends(get_db),
-) -> None:
-    """Asterisk ruft diesen Endpoint nach jeder aufgezeichneten Voicemail auf."""
-    if body.duration < 1:
-        return
-
-    account = await db.scalar(
-        select(SipAccount).where(SipAccount.extension == body.extension)
-    )
-    if not account:
-        logger.warning("[Voicemail] Kein Account für Durchwahl %s", body.extension)
-        return
-
-    voicemail = Voicemail(
-        sip_account_id=account.id,
-        caller_number=body.caller_number,
-        file_path=body.file_path,
-        duration_seconds=body.duration,
-        is_read=False,
-        received_at=datetime.utcnow(),
-    )
-    db.add(voicemail)
-    await db.commit()
-    logger.info(
-        "[Voicemail] %s ← %s (%ds) gespeichert",
-        account.username, body.caller_number, body.duration,
-    )

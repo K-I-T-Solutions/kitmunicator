@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # Asterisk-Webhook: Erlaubte Quell-IPs (Komma-getrennt, leer = alle intern)
     ASTERISK_WEBHOOK_SECRET: str = ""
 
+    # Asterisk-Voicemail-Spool (Volume, read-only eingehängt)
+    VOICEMAIL_SPOOL_DIR: str = "/var/spool/asterisk/voicemail"
+    VOICEMAIL_CONTEXT: str = "internal_vm"
+
     # Fernet-Schlüssel für reversible SIP-Passwortverschlüsselung
     SIP_ENCRYPTION_KEY: str
 
