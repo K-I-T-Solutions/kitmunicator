@@ -3,6 +3,10 @@ import { useAuthStore } from '@/stores/auth'
 
 const router = createRouter({
   history: createWebHistory(),
+  // Sprungmarken wie /settings#ansage; main ist der Scroll-Container, daher per scrollIntoView
+  scrollBehavior(to) {
+    if (to.hash) setTimeout(() => document.querySelector(to.hash)?.scrollIntoView({ behavior: 'smooth' }), 300)
+  },
   routes: [
     {
       path: '/',

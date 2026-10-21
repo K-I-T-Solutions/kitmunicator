@@ -19,6 +19,7 @@ volumes:
   asterisk_config_dev:
   asterisk_sounds_dev:
   asterisk_voicemail_dev:
+  kitmunicator_greetings_dev:
 
 services:
 
@@ -41,6 +42,8 @@ services:
       - ./mobile/kitmunicator-firebase-adminsdk-fbsvc-72c93a0022.json:/etc/firebase-adminsdk.json:ro
       # Voicemail-Nachrichten aus Asterisk (nur lesen)
       - asterisk_voicemail_dev:/var/spool/asterisk/voicemail:ro
+      # Eigene Voicemail-Ansagen (Backend schreibt)
+      - kitmunicator_greetings_dev:/var/lib/kitmunicator/greetings
     expose:
       - "8000"
     depends_on:
@@ -109,6 +112,7 @@ services:
       - asterisk_config_dev:/var/lib/asterisk
       - asterisk_sounds_dev:/var/lib/asterisk/sounds
       - asterisk_voicemail_dev:/var/spool/asterisk/voicemail
+      - kitmunicator_greetings_dev:/var/lib/kitmunicator/greetings:ro
     networks:
       - core_network
     healthcheck:

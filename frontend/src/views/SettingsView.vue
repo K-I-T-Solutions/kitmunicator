@@ -8,6 +8,7 @@ import { useCallNotifications } from '@/composables/useCallNotifications'
 import { useRingtone } from '@/composables/useRingtone'
 import { RINGTONES, type RingtoneId } from '@/lib/tones'
 import UserAvatar from '@/components/ui/UserAvatar.vue'
+import GreetingSettings from '@/components/settings/GreetingSettings.vue'
 
 const auth = useAuthStore()
 const { team, statuses, loadTeam } = usePresence()
@@ -107,6 +108,8 @@ onMounted(async () => {
         </li>
       </ul>
     </section>
+
+    <GreetingSettings id="ansage" class="scroll-mt-6" />
 
     <!-- Klingelton -->
     <section class="rounded-2xl border border-line/60 bg-surface p-5 md:p-6" aria-labelledby="ringtone-title">

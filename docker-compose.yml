@@ -23,6 +23,7 @@ volumes:
   asterisk_sounds:
   asterisk_logs:
   asterisk_voicemail:
+  kitmunicator_greetings:
 
 services:
 
@@ -61,6 +62,8 @@ services:
       - ./mobile/kitmunicator-firebase-adminsdk-fbsvc-72c93a0022.json:/app/firebase-adminsdk.json:ro
       # Voicemail-Nachrichten aus Asterisk (nur lesen)
       - asterisk_voicemail:/var/spool/asterisk/voicemail:ro
+      # Eigene Voicemail-Ansagen (Backend schreibt)
+      - kitmunicator_greetings:/var/lib/kitmunicator/greetings
     depends_on:
       kitmunicator_postgres:
         condition: service_healthy
@@ -123,6 +126,7 @@ services:
       - asterisk_sounds:/var/lib/asterisk/sounds
       - asterisk_logs:/var/log/asterisk
       - asterisk_voicemail:/var/spool/asterisk/voicemail
+      - kitmunicator_greetings:/var/lib/kitmunicator/greetings:ro
     networks:
       - kitmunicator_net
       - traefik_net

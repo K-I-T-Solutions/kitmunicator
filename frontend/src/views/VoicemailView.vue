@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { CircleAlert, Inbox, Loader2, MailOpen, Pause, Phone, Play, RefreshCw } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { usePhone } from '@/composables/usePhone'
@@ -99,8 +100,9 @@ onBeforeUnmount(() => {
           {{ messages.length }} {{ messages.length === 1 ? 'Nachricht' : 'Nachrichten' }}
           <span v-if="unreadCount" class="font-normal text-muted">· {{ unreadCount }} neu</span>
         </h2>
-        <p v-if="myExtension" class="mt-0.5 text-xs text-subtle">
-          Am Telefon abhören: <span class="font-mono">*98{{ myExtension }}</span>
+        <p class="mt-0.5 text-xs text-subtle">
+          <template v-if="myExtension">Am Telefon abhören: <span class="font-mono">*98{{ myExtension }}</span> · </template>
+          <RouterLink :to="{ path: '/settings', hash: '#ansage' }" class="text-brand hover:underline">Ansage ändern</RouterLink>
         </p>
       </div>
       <button

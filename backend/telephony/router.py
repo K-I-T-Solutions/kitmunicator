@@ -20,6 +20,10 @@ from telephony.service import (
     sip_md5_cred,
 )
 from telephony.voicemail_store import sync_mailbox, resolve_audio
+from telephony.greetings import (
+    GreetingError, MAX_BYTES as GREETING_MAX_BYTES,
+    delete_greeting, greeting_path, read_greeting, save_greeting,
+)
 from push.fcm_service import send_incoming_call_push, FCMError
 
 logger = logging.getLogger(__name__)
@@ -259,6 +263,73 @@ async def get_voicemail_audio(
     if not path:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Audiodatei nicht gefunden")
     return FileResponse(path, media_type="audio/wav")
+
+
+# ── Eigene Voicemail-Ansage ───────────────────────────────────────────────────
+
+class GreetingOut(BaseModel):
+    exists: bool
+    duration_seconds: int | None = None
+    updated_at: datetime | None = None
+
+
+async def _my_account(db: AsyncSession, user_id: str) -> SipAccount:
+    account = await db.scalar(select(SipAccount).where(SipAccount.user_id == user_id))
+    if not account:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kein SIP-Account gefunden")
+    return account
+
+
+@router.get("/greeting", response_model=GreetingOut)
+async def get_greeting(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> GreetingOut:
+    account = await _my_account(db, current_user["sub"])
+    info = read_greeting(account.extension)
+    if not info:
+        return GreetingOut(exists=False)
+    return GreetingOut(exists=True, duration_seconds=info.duration_seconds, updated_at=info.updated_at)
+
+
+@router.get("/greeting/audio", response_class=FileResponse)
+async def get_greeting_audio(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> FileResponse:
+    account = await _my_account(db, current_user["sub"])
+    path = greeting_path(account.extension)
+    if not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Keine eigene Ansage")
+    return FileResponse(path, media_type="audio/wav")
+
+
+@router.put("/greeting", response_model=GreetingOut)
+async def put_greeting(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> GreetingOut:
+    """Body: rohes WAV (16 kHz, 16 bit, mono), vom Browser erzeugt."""
+    account = await _my_account(db, current_user["sub"])
+    data = await request.body()
+    if len(data) > GREETING_MAX_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Ansage zu groß")
+    try:
+        info = save_greeting(account.extension, data)
+    except GreetingError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
+    logger.info("[Voicemail] Neue Ansage für %s (%ds)", account.username, info.duration_seconds)
+    return GreetingOut(exists=True, duration_seconds=info.duration_seconds, updated_at=info.updated_at)
+
+
+@router.delete("/greeting", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_greeting(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> None:
+    account = await _my_account(db, current_user["sub"])
+    delete_greeting(account.extension)
 
 
 # ── FCM Push-Token ────────────────────────────────────────────────────────────

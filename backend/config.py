@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     # Asterisk-Voicemail-Spool (Volume, read-only eingehängt)
     VOICEMAIL_SPOOL_DIR: str = "/var/spool/asterisk/voicemail"
     VOICEMAIL_CONTEXT: str = "internal_vm"
+    # Eigene Ansagen (Volume, Backend schreibt, Asterisk liest)
+    GREETINGS_DIR: str = "/var/lib/kitmunicator/greetings"
 
     # Fernet-Schlüssel für reversible SIP-Passwortverschlüsselung
     SIP_ENCRYPTION_KEY: str
