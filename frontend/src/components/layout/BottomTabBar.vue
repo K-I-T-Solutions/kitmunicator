@@ -5,16 +5,18 @@ import { NAV_ITEMS, isActive } from './navigation'
 
 const route = useRoute()
 const { unreadCount } = useVoicemail()
+// Fünf Tabs passen; die Verwaltung ist mobil über die Einstellungen erreichbar
+const navItems = NAV_ITEMS.filter(item => !item.adminOnly)
 </script>
 
 <template>
   <nav
     class="fixed inset-x-0 bottom-0 z-30 grid border-t border-line/60 bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
-    :style="{ gridTemplateColumns: `repeat(${NAV_ITEMS.length}, minmax(0, 1fr))` }"
+    :style="{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }"
     aria-label="Hauptnavigation"
   >
     <RouterLink
-      v-for="item in NAV_ITEMS"
+      v-for="item in navItems"
       :key="item.to"
       :to="item.to"
       class="flex flex-col items-center justify-center gap-1 py-2.5 transition-colors"

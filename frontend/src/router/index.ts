@@ -33,6 +33,12 @@ const router = createRouter({
       meta: { requiresAuth: true, title: 'Kontakte' },
     },
     {
+      path: '/admin',
+      name: 'admin',
+      component: () => import('@/views/AdminView.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true, title: 'Verwaltung' },
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('@/views/SettingsView.vue'),
@@ -47,6 +53,7 @@ router.beforeEach((to) => {
     // init() hat den Login bereits ausgelöst – hier nur blockieren
     return false
   }
+  if (to.meta.requiresAdmin && !auth.isAdmin) return { name: 'home' }
 })
 
 export default router

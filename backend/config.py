@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     # Öffentliche Issuer-URL aus dem JWT – leer = KEYCLOAK_URL verwenden
     KEYCLOAK_ISSUER: str = ""
 
+    # Keycloak-Service-Client (Admin-API: Nutzer lesen für die Verwaltung)
+    # Confidential Client mit Service-Account, Rollen realm-management: view-users, query-users
+    KEYCLOAK_ADMIN_CLIENT_ID: str = ""
+    KEYCLOAK_ADMIN_CLIENT_SECRET: str = ""
+
     # Asterisk ARI
     ASTERISK_ARI_URL: str
     ASTERISK_ARI_USER: str

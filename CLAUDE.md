@@ -15,7 +15,15 @@ Internes SIP/WebRTC-Kommunikationssystem für K.I.T. Solutions.
 
 - KITmunicator Backend + Asterisk auf cisco (192.168.178.x / Homelab)
 - TURN: coturn auf 192.168.178.100:3478
-- Aktueller Alembic-Stand: Migration 0005
+- Aktueller Alembic-Stand: Migration 0007
+
+## Asterisk Realtime (seit 2026-10-21)
+
+- Interne User/Mailboxen kommen **nicht** aus `pjsip.conf`/`voicemail.conf`, sondern aus Views auf `sip_accounts` (Migration 0006): `ps_endpoints`, `ps_auths` (md5_cred, kein Klartext), `ps_aors`, `voicemail_users`. Asterisk liest per `res_config_pgsql` (`sorcery.conf`, `extconfig.conf`, `res_pgsql.conf.tmpl` → Entrypoint).
+- Neuer User / sperren = DB-Update, wirkt sofort. Kein ARI-Endpoint-Anlegen mehr.
+- Realtime kennt keine Templates: Endpoint-Optionen stehen in der View `ps_endpoints` (Änderung = neue Migration).
+- Durchwahlen: Personen 10xx, Sammelrufgruppen 20xx (`ring_groups`, Dialplan `_20XX` holt Dial-String von `/telephony/internal/group/{ext}`), eingehend Sipgate → `/telephony/internal/inbound/{did}`.
+- Verwaltung: Web-App `/admin` (Rolle `telephony_admin`), Backend `backend/admin/`. Keycloak-Nutzerliste über Service-Client `KEYCLOAK_ADMIN_CLIENT_ID/SECRET` (realm-management: view-users, query-users).
 
 ## Abgeschlossene Features
 

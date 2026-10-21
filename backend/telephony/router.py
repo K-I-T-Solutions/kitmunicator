@@ -20,6 +20,7 @@ from telephony.service import (
     sip_md5_cred,
 )
 from telephony.voicemail_store import sync_mailbox, resolve_audio
+from telephony.routing import group_dial_info, inbound_target
 from telephony.greetings import (
     GreetingError, MAX_BYTES as GREETING_MAX_BYTES,
     delete_greeting, greeting_path, read_greeting, save_greeting,
@@ -429,3 +430,14 @@ async def extension_lookup(
     )
     return account.username if account else ""
 
+
+@router.get("/internal/group/{extension}", response_class=PlainTextResponse)
+async def group_lookup(extension: str, db: AsyncSession = Depends(get_db)) -> str:
+    """Dialplan _20XX: 'timeout|Dial-String|Fallback'. Kein Auth — wie ext-lookup."""
+    return await group_dial_info(db, extension)
+
+
+@router.get("/internal/inbound/{dialed}", response_class=PlainTextResponse)
+async def inbound_lookup(dialed: str, db: AsyncSession = Depends(get_db)) -> str:
+    """Dialplan from_trunk: angerufene Nummer → Ziel-Durchwahl (leer = keine Zuordnung)."""
+    return await inbound_target(db, dialed)

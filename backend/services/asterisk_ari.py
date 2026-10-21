@@ -33,7 +33,8 @@ _active_channels: dict[str, set[str]] = {}
 # Offene CDR-Einträge pro Channel-ID
 _pending_calls: dict[str, dict] = {}
 
-_INTERNAL_EXT = re.compile(r"^10\d{2}$")
+# Personen 10xx, Sammelrufe 20xx
+_INTERNAL_EXT = re.compile(r"^(10|20)\d{2}$")
 _TRUNK_PREFIX = "PJSIP/sipgate_trunk-"
 
 # Spielraum zwischen Channel-Erzeugung und origtime der Voicemail

@@ -16,6 +16,7 @@ const auth = useAuthStore()
 const { statuses, team } = usePresence()
 const { theme, toggle: toggleTheme } = useTheme()
 const { unreadCount } = useVoicemail()
+const navItems = computed(() => NAV_ITEMS.filter(item => !item.adminOnly || auth.isAdmin))
 
 const myStatus = computed(() => (auth.userId && statuses[auth.userId]) || 'available')
 const myExtension = computed(() => team.value.find(m => m.user_id === auth.userId)?.extension)
@@ -38,7 +39,7 @@ const myExtension = computed(() => team.value.find(m => m.user_id === auth.userI
 
     <nav class="flex-1 space-y-1 px-3 py-4" aria-label="Hauptnavigation">
       <RouterLink
-        v-for="item in NAV_ITEMS"
+        v-for="item in navItems"
         :key="item.to"
         :to="item.to"
         class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors"

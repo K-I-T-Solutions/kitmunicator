@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Bell, Eye, LogOut, Music, Play, Square, Trash2, Upload, UserRound, Volume2 } from 'lucide-vue-next'
+import { Bell, ChevronRight, Eye, LogOut, Music, Play, ShieldCheck, Square, Trash2, Upload, UserRound, Volume2 } from 'lucide-vue-next'
+import { RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { usePresence, STATUS_LABELS } from '@/composables/usePresence'
 import { useTeamVisibility } from '@/composables/useTeamVisibility'
@@ -51,6 +52,17 @@ onMounted(async () => {
 
 <template>
   <div class="mx-auto max-w-3xl space-y-6 px-4 py-6 md:px-6">
+    <!-- Mobil gibt es keinen Navigationseintrag für die Verwaltung -->
+    <RouterLink
+      v-if="auth.isAdmin"
+      to="/admin"
+      class="flex items-center gap-3 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-4 transition-colors hover:bg-cyan-500/15 md:hidden"
+    >
+      <ShieldCheck class="h-5 w-5 text-brand" />
+      <span class="flex-1 text-sm font-medium text-fg">Verwaltung öffnen</span>
+      <ChevronRight class="h-4 w-4 text-brand" />
+    </RouterLink>
+
     <!-- Team-Anzeige -->
     <section class="rounded-2xl border border-line/60 bg-surface p-5 md:p-6" aria-labelledby="team-visibility-title">
       <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
