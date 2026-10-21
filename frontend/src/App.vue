@@ -14,6 +14,7 @@ import IncomingCallModal from '@/components/call/IncomingCallModal.vue'
 import CallErrorToast from '@/components/call/CallErrorToast.vue'
 import MissedCallToasts from '@/components/call/MissedCallToasts.vue'
 import { useCallNotifications } from '@/composables/useCallNotifications'
+import { useCallTones } from '@/composables/useCallTones'
 
 const auth = useAuthStore()
 const { callState, register } = usePhone()
@@ -21,6 +22,7 @@ const { init: initPresence, loadTeam, subscribe } = usePresence()
 const { hasActiveCall } = useActiveCall()
 const { startPolling: pollVoicemail } = useVoicemail()
 const { start: startCallNotifications } = useCallNotifications()
+useCallTones()
 const route = useRoute()
 
 onMounted(async () => {

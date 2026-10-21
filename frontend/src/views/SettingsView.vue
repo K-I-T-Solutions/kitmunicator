@@ -1,16 +1,40 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { Bell, Eye, LogOut, UserRound } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { Bell, Eye, LogOut, Music, Play, Square, Trash2, Upload, UserRound, Volume2 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { usePresence, STATUS_LABELS } from '@/composables/usePresence'
 import { useTeamVisibility } from '@/composables/useTeamVisibility'
 import { useCallNotifications } from '@/composables/useCallNotifications'
+import { useRingtone } from '@/composables/useRingtone'
+import { RINGTONES, type RingtoneId } from '@/lib/tones'
 import UserAvatar from '@/components/ui/UserAvatar.vue'
 
 const auth = useAuthStore()
 const { team, statuses, loadTeam } = usePresence()
 const { isVisible, toggle, setAll } = useTeamVisibility()
 const { desktopEnabled, permission, setDesktopEnabled } = useCallNotifications()
+const ringtone = useRingtone()
+
+const ringtoneOptions = Object.entries(RINGTONES).map(([id, t]) => ({ id: id as RingtoneId, label: t.label }))
+const fileInput = ref<HTMLInputElement | null>(null)
+const uploadError = ref<string | null>(null)
+
+async function onFileChosen(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  ringtone.stopPreview()
+  uploadError.value = await ringtone.uploadCustom(file)
+}
+
+function chooseRingtone(id: RingtoneId) {
+  ringtone.stopPreview()
+  ringtone.select(id)
+}
+
+onBeforeUnmount(ringtone.stopPreview)
+
 const loading = ref(team.value.length === 0)
 
 const me = computed(() => team.value.find(m => m.user_id === auth.userId))
@@ -82,6 +106,90 @@ onMounted(async () => {
           </label>
         </li>
       </ul>
+    </section>
+
+    <!-- Klingelton -->
+    <section class="rounded-2xl border border-line/60 bg-surface p-5 md:p-6" aria-labelledby="ringtone-title">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="ringtone-title" class="flex items-center gap-2 text-sm font-semibold text-fg">
+            <Music class="h-4 w-4 text-brand" /> Klingelton
+          </h2>
+          <p class="mt-1 text-sm text-muted">Gilt für diesen Browser – jedes Gerät kann anders klingeln.</p>
+        </div>
+        <button
+          class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium ring-1 transition-colors"
+          :class="ringtone.previewing.value ? 'bg-cyan-500 text-navy-800 ring-cyan-500' : 'bg-cyan-500/15 text-brand ring-cyan-500/25 hover:bg-cyan-500/25'"
+          @click="ringtone.togglePreview()"
+        >
+          <Square v-if="ringtone.previewing.value" class="h-3.5 w-3.5" />
+          <Play v-else class="h-3.5 w-3.5" />
+          {{ ringtone.previewing.value ? 'Stopp' : 'Anhören' }}
+        </button>
+      </div>
+
+      <div class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Klingelton">
+        <button
+          v-for="option in ringtoneOptions"
+          :key="option.id"
+          role="radio"
+          :aria-checked="ringtone.prefs.value.id === option.id"
+          class="rounded-xl px-3 py-2.5 text-sm font-medium transition-colors"
+          :class="ringtone.prefs.value.id === option.id
+            ? 'bg-cyan-500/10 text-brand ring-1 ring-cyan-500/40'
+            : 'bg-raised text-muted ring-1 ring-transparent hover:text-fg'"
+          @click="chooseRingtone(option.id)"
+        >{{ option.label }}</button>
+      </div>
+
+      <!-- Eigene Datei -->
+      <div
+        class="mt-2 flex items-center gap-3 rounded-xl px-3 py-2.5 ring-1 transition-colors"
+        :class="ringtone.prefs.value.id === 'custom' ? 'bg-cyan-500/10 ring-cyan-500/40' : 'bg-raised ring-transparent'"
+      >
+        <button
+          v-if="ringtone.prefs.value.customName"
+          role="radio"
+          :aria-checked="ringtone.prefs.value.id === 'custom'"
+          class="min-w-0 flex-1 truncate text-left text-sm font-medium"
+          :class="ringtone.prefs.value.id === 'custom' ? 'text-brand' : 'text-muted hover:text-fg'"
+          :title="ringtone.prefs.value.customName"
+          @click="chooseRingtone('custom')"
+        >Eigene: {{ ringtone.prefs.value.customName }}</button>
+        <span v-else class="min-w-0 flex-1 text-sm text-muted">Eigene Datei (MP3, WAV, OGG · max. 5 MB)</span>
+        <button
+          class="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-brand transition-colors hover:bg-cyan-500/10"
+          @click="fileInput?.click()"
+        >
+          <Upload class="h-3.5 w-3.5" /> {{ ringtone.prefs.value.customName ? 'Ersetzen' : 'Hochladen' }}
+        </button>
+        <button
+          v-if="ringtone.prefs.value.customName"
+          class="shrink-0 rounded-lg p-1.5 text-subtle transition-colors hover:bg-red-500/10 hover:text-red-500"
+          aria-label="Eigenen Klingelton entfernen"
+          title="Entfernen"
+          @click="ringtone.stopPreview(); ringtone.removeCustom()"
+        >
+          <Trash2 class="h-3.5 w-3.5" />
+        </button>
+        <input ref="fileInput" type="file" accept="audio/*" class="hidden" @change="onFileChosen" />
+      </div>
+      <p v-if="uploadError" class="mt-2 text-xs text-red-600 dark:text-red-400">{{ uploadError }}</p>
+
+      <label class="mt-4 flex items-center gap-3">
+        <Volume2 class="h-4 w-4 shrink-0 text-subtle" />
+        <span class="sr-only">Lautstärke</span>
+        <input
+          type="range"
+          min="0.05"
+          max="1"
+          step="0.05"
+          class="h-1.5 flex-1 cursor-pointer accent-cyan-500"
+          :value="ringtone.prefs.value.volume"
+          @input="ringtone.setVolume(Number(($event.target as HTMLInputElement).value))"
+        />
+        <span class="tabular w-10 text-right font-mono text-xs text-subtle">{{ Math.round(ringtone.prefs.value.volume * 100) }} %</span>
+      </label>
     </section>
 
     <!-- Benachrichtigungen -->
