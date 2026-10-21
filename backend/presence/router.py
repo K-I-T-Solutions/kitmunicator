@@ -39,6 +39,8 @@ class PresenceManager:
     def __init__(self) -> None:
         # websocket → set of subscribed user_ids
         self._subscriptions: dict[WebSocket, set[str]] = {}
+        # websocket → authentifizierte user_id (für Nachrichten an genau einen User)
+        self._owners: dict[WebSocket, str] = {}
         self._lock = asyncio.Lock()
 
     async def connect(self, ws: WebSocket) -> None:
@@ -49,6 +51,24 @@ class PresenceManager:
     async def disconnect(self, ws: WebSocket) -> None:
         async with self._lock:
             self._subscriptions.pop(ws, None)
+            self._owners.pop(ws, None)
+
+    async def identify(self, ws: WebSocket, user_id: str) -> None:
+        async with self._lock:
+            if ws in self._subscriptions:
+                self._owners[ws] = user_id
+
+    async def send_to_user(self, user_id: str, data: dict[str, Any]) -> None:
+        """Sendet ein Event an alle Verbindungen (Tabs/Geräte) eines Users."""
+        payload = json.dumps(data)
+        async with self._lock:
+            targets = [ws for ws, owner in self._owners.items() if owner == user_id]
+
+        for ws in targets:
+            try:
+                await ws.send_text(payload)
+            except Exception:
+                await self.disconnect(ws)
 
     async def subscribe(self, ws: WebSocket, user_ids: list[str]) -> None:
         async with self._lock:
@@ -240,6 +260,7 @@ async def ws_presence(ws: WebSocket) -> None:
                     await ws.close(code=4001)
                     return
                 authenticated_user_id = payload["sub"]
+                await manager.identify(ws, authenticated_user_id)
                 await ws.send_text(json.dumps({"type": "auth_ok", "user_id": authenticated_user_id}))
 
                 # Eigenen aktuellen Status direkt senden

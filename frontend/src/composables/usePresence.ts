@@ -28,6 +28,20 @@ const phoneStatuses = reactive<Record<string, PhoneStatus>>({})
 const team = ref<TeamMember[]>([])
 const subscribedIds = new Set<string>()
 let ws: WebSocket | null = null
+
+export interface MissedCallEvent {
+  caller_number: string
+  caller_name: string | null
+  voicemail_id: number | null
+  at: string
+}
+const missedCallListeners = new Set<(e: MissedCallEvent) => void>()
+
+/** Verpasste Anrufe (Server-Event über den Presence-Socket). Gibt die Abmeldung zurück. */
+export function onMissedCall(listener: (e: MissedCallEvent) => void): () => void {
+  missedCallListeners.add(listener)
+  return () => missedCallListeners.delete(listener)
+}
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
 function _send(data: unknown) {
@@ -58,6 +72,9 @@ function _connect(token: string) {
     if (msg.type === 'presence') {
       statuses[msg.user_id] = msg.status
       if (msg.phone_status) phoneStatuses[msg.user_id] = msg.phone_status
+    } else if (msg.type === 'missed_call') {
+      const event = msg as unknown as MissedCallEvent
+      missedCallListeners.forEach(listener => listener(event))
     }
   }
 

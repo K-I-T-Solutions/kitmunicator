@@ -12,12 +12,15 @@ import BottomTabBar from '@/components/layout/BottomTabBar.vue'
 import ActiveCallBar from '@/components/call/ActiveCallBar.vue'
 import IncomingCallModal from '@/components/call/IncomingCallModal.vue'
 import CallErrorToast from '@/components/call/CallErrorToast.vue'
+import MissedCallToasts from '@/components/call/MissedCallToasts.vue'
+import { useCallNotifications } from '@/composables/useCallNotifications'
 
 const auth = useAuthStore()
 const { callState, register } = usePhone()
 const { init: initPresence, loadTeam, subscribe } = usePresence()
 const { hasActiveCall } = useActiveCall()
 const { startPolling: pollVoicemail } = useVoicemail()
+const { start: startCallNotifications } = useCallNotifications()
 const route = useRoute()
 
 onMounted(async () => {
@@ -26,6 +29,7 @@ onMounted(async () => {
   // Team früh laden: Sidebar (eigene Durchwahl) und Anrufer-Namen brauchen es
   loadTeam().then(members => subscribe(members.map(m => m.user_id)))
   pollVoicemail()
+  startCallNotifications()
   await register()
 })
 
@@ -53,5 +57,6 @@ const showCallBar = computed(() => hasActiveCall.value && route.name !== 'dialer
     <ActiveCallBar v-if="showCallBar" />
     <IncomingCallModal v-if="callState === 'incoming'" />
     <CallErrorToast />
+    <MissedCallToasts />
   </div>
 </template>

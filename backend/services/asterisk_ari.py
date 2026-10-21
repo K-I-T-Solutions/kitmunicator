@@ -4,12 +4,13 @@ Asterisk ARI WebSocket Consumer.
 Verfolgt Anruf-State via Channel-Events und setzt:
   - phone_status in UserPresence (ringing / in_call / idle)
   - CallRecord (CDR) beim Beenden jedes Channels
+  - missed_call-Event an den Angerufenen (ggf. mit Voicemail)
 """
 import asyncio
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import websockets
@@ -21,8 +22,9 @@ from sqlalchemy.sql import func
 from config import get_settings
 from database import AsyncSessionLocal
 from presence.models import UserPresence, PhoneStatus
-from telephony.models import SipAccount, CallRecord, CallDirection, CallStatus
+from telephony.models import SipAccount, CallRecord, CallDirection, CallStatus, Voicemail
 from telephony.service import sync_sip_accounts_to_asterisk
+from telephony.voicemail_store import sync_mailbox
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +36,9 @@ _pending_calls: dict[str, dict] = {}
 
 _INTERNAL_EXT = re.compile(r"^10\d{2}$")
 _TRUNK_PREFIX = "PJSIP/sipgate_trunk-"
+
+# Spielraum zwischen Channel-Erzeugung und origtime der Voicemail
+_VOICEMAIL_TOLERANCE_S = 5
 
 
 def _username_from_channel(channel_name: str) -> str | None:
@@ -98,7 +103,8 @@ async def _write_cdr(channel_id: str, cause: int) -> None:
     answered: bool = info["answered"]
     answered_at: datetime | None = info.get("answered_at")
 
-    if answered:
+    # Von der Mailbox angenommen zählt für den Angerufenen als verpasst
+    if answered and not info.get("voicemail"):
         cdr_status = CallStatus.answered
         duration = int((now - answered_at).total_seconds()) if answered_at else 0
     elif cause == 17:
@@ -120,6 +126,9 @@ async def _write_cdr(channel_id: str, cause: int) -> None:
             select(SipAccount).where(SipAccount.extension == info["callee_number"])
         )
         callee_name = callee_account.username if callee_account else None
+        callee_user_id = callee_account.user_id if callee_account else None
+        # Bei Trunk-Anrufen gehört der CDR dem Angerufenen — daher per Nummer vergleichen
+        callee_is_caller = callee_account is not None and callee_account.extension == info["caller_number"]
 
         try:
             record = CallRecord(
@@ -145,6 +154,45 @@ async def _write_cdr(channel_id: str, cause: int) -> None:
         except Exception as exc:
             await db.rollback()
             log.warning("CDR-Schreiben fehlgeschlagen: %s", exc)
+            return
+
+        missed = cdr_status in (CallStatus.no_answer, CallStatus.busy)
+        if missed and callee_account and not callee_is_caller and info["direction"] != CallDirection.outbound:
+            voicemail_id = await _find_new_voicemail(db, callee_account, info) if info.get("voicemail") else None
+            await db.commit()
+            await _notify_missed_call(callee_user_id, info, voicemail_id)
+
+
+async def _find_new_voicemail(db, callee_account: SipAccount, info: dict) -> int | None:
+    """Sucht die Nachricht, die der Anrufer gerade hinterlassen hat.
+    Asterisk schreibt sie beim Auflegen — der Spool ist zu diesem Zeitpunkt aktuell."""
+    await sync_mailbox(db, callee_account)
+    vm = await db.scalar(
+        select(Voicemail)
+        .where(
+            Voicemail.sip_account_id == callee_account.id,
+            Voicemail.caller_number == info["caller_number"],
+            Voicemail.received_at >= info["started_at"] - timedelta(seconds=_VOICEMAIL_TOLERANCE_S),
+        )
+        .order_by(Voicemail.received_at.desc())
+    )
+    # Zu kurze Aufnahmen verwirft Asterisk — dann bleibt es beim verpassten Anruf
+    return vm.id if vm else None
+
+
+async def _notify_missed_call(user_id: str, info: dict, voicemail_id: int | None) -> None:
+    from presence.router import manager
+    await manager.send_to_user(user_id, {
+        "type": "missed_call",
+        "caller_number": info["caller_number"],
+        "caller_name": info.get("caller_name"),
+        "voicemail_id": voicemail_id,
+        "at": info["started_at"].isoformat(),
+    })
+    log.warning(
+        "Verpasster Anruf %s → %s gemeldet%s",
+        info["caller_number"], info["callee_number"], " (mit Voicemail)" if voicemail_id else "",
+    )
 
 
 async def _handle_trunk_channel_created(channel: dict, channel_id: str) -> None:
@@ -192,6 +240,18 @@ async def _handle_trunk_channel_created(channel: dict, channel_id: str) -> None:
     log.info("Trunk-Anruf: %s → %s (%s)", caller_number, callee_number, callee_username)
 
 
+def _mark_voicemail(event: dict, channel_id: str) -> None:
+    """VoiceMail() nimmt den Anrufer-Channel an — merken, damit das nicht als
+    Gespräch zählt. Das Event kommt vor dem ChannelStateChange auf Up.
+    Bei eigener Ansage kommt Answer() vorher; answered wird dann trotzdem
+    durch das voicemail-Flag überstimmt."""
+    app = event.get("dialplan_app")
+    # Eigene Ansage läuft per Playback() vor VoiceMail() — auch das ist schon die Mailbox
+    is_greeting = app == "Playback" and "/greetings/" in event.get("dialplan_app_data", "")
+    if (app == "VoiceMail" or is_greeting) and channel_id in _pending_calls:
+        _pending_calls[channel_id]["voicemail"] = True
+
+
 async def _handle_event(event: dict) -> None:
     event_type = event.get("type", "")
     channel = event.get("channel", {})
@@ -202,6 +262,8 @@ async def _handle_event(event: dict) -> None:
     if _is_trunk_channel(channel_name):
         if event_type == "ChannelCreated":
             await _handle_trunk_channel_created(channel, channel_id)
+        elif event_type == "ChannelDialplan":
+            _mark_voicemail(event, channel_id)
         elif event_type == "ChannelStateChange":
             if channel.get("state") == "Up" and channel_id in _pending_calls:
                 _pending_calls[channel_id]["answered"] = True
@@ -248,6 +310,9 @@ async def _handle_event(event: dict) -> None:
             "answered_at": None,
             "write_cdr": write_cdr,
         }
+
+    elif event_type == "ChannelDialplan":
+        _mark_voicemail(event, channel_id)
 
     elif event_type == "ChannelStateChange":
         state = channel.get("state", "")
@@ -298,7 +363,9 @@ async def ari_consumer() -> None:
                         event = json.loads(raw)
                     except json.JSONDecodeError:
                         continue
-                    if event.get("type") in ("ChannelCreated", "ChannelStateChange", "ChannelDestroyed"):
+                    if event.get("type") in (
+                        "ChannelCreated", "ChannelDialplan", "ChannelStateChange", "ChannelDestroyed",
+                    ):
                         await _handle_event(event)
 
         except (ConnectionClosed, OSError) as exc:

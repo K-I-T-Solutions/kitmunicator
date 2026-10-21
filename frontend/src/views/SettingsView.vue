@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Eye, LogOut, UserRound } from 'lucide-vue-next'
+import { Bell, Eye, LogOut, UserRound } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { usePresence, STATUS_LABELS } from '@/composables/usePresence'
 import { useTeamVisibility } from '@/composables/useTeamVisibility'
+import { useCallNotifications } from '@/composables/useCallNotifications'
 import UserAvatar from '@/components/ui/UserAvatar.vue'
 
 const auth = useAuthStore()
 const { team, statuses, loadTeam } = usePresence()
 const { isVisible, toggle, setAll } = useTeamVisibility()
-
+const { desktopEnabled, permission, setDesktopEnabled } = useCallNotifications()
 const loading = ref(team.value.length === 0)
 
 const me = computed(() => team.value.find(m => m.user_id === auth.userId))
@@ -81,6 +82,42 @@ onMounted(async () => {
           </label>
         </li>
       </ul>
+    </section>
+
+    <!-- Benachrichtigungen -->
+    <section class="rounded-2xl border border-line/60 bg-surface p-5 md:p-6" aria-labelledby="notify-title">
+      <h2 id="notify-title" class="flex items-center gap-2 text-sm font-semibold text-fg">
+        <Bell class="h-4 w-4 text-brand" /> Benachrichtigungen
+      </h2>
+      <p class="mt-1 text-sm text-muted">
+        Verpasste Anrufe und neue Voicemails erscheinen in der App. Ist der Tab im Hintergrund,
+        kann zusätzlich eine Desktop-Benachrichtigung kommen.
+      </p>
+      <label class="mt-4 flex items-center gap-3" :class="permission === 'granted' || permission === 'default' ? 'cursor-pointer' : 'opacity-60'">
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm text-fg">Desktop-Benachrichtigungen</span>
+          <span class="block text-xs text-subtle">
+            <template v-if="permission === 'unsupported'">Von diesem Browser nicht unterstützt.</template>
+            <template v-else-if="permission === 'denied'">Im Browser blockiert – in den Website-Einstellungen freigeben.</template>
+            <template v-else-if="permission === 'default'">Beim Einschalten fragt der Browser nach.</template>
+            <template v-else>Nur wenn der Tab im Hintergrund ist.</template>
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          role="switch"
+          class="peer sr-only"
+          :checked="desktopEnabled && permission === 'granted'"
+          :disabled="permission === 'denied' || permission === 'unsupported'"
+          @change="setDesktopEnabled(($event.target as HTMLInputElement).checked)"
+        />
+        <span
+          class="relative h-6 w-11 shrink-0 rounded-full bg-raised ring-1 ring-line transition-colors peer-checked:bg-cyan-500 peer-checked:ring-cyan-500 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-cyan-500 peer-checked:[&>span]:translate-x-5"
+          aria-hidden="true"
+        >
+          <span class="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform" />
+        </span>
+      </label>
     </section>
 
     <!-- Konto -->

@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CircleAlert, Clock,
   Delete, Mic, MicOff, Pause, Phone, PhoneOff, Play,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { usePhone } from '@/composables/usePhone'
-import { usePresence } from '@/composables/usePresence'
+import { onMissedCall, usePresence } from '@/composables/usePresence'
 import { useActiveCall } from '@/composables/useActiveCall'
 import { formatCallTime, formatDuration } from '@/lib/format'
 
@@ -110,6 +110,10 @@ async function loadRecentCalls() {
 }
 
 onMounted(loadRecentCalls)
+
+// Verpasste Anrufe sofort in der Liste zeigen
+const stopMissedCall = onMissedCall(() => loadRecentCalls())
+onBeforeUnmount(stopMissedCall)
 
 // Nach Gesprächsende neu laden – das Backend schreibt den CDR kurz nach dem Auflegen
 watch(callState, (state, prev) => {
