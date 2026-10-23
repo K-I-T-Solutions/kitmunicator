@@ -4,6 +4,15 @@ import { useAuthStore } from '@/stores/auth'
 export type PresenceStatus = 'available' | 'busy' | 'away' | 'dnd'
 export type PhoneStatus = 'idle' | 'ringing' | 'in_call' | 'offline'
 
+/** Was ein Anrufer erwartet — passt zum Dialplan (_10XX). Leer = klingelt normal. */
+export function reachabilityNotice(status: PresenceStatus, phone: PhoneStatus): string {
+  if (phone === 'offline') return 'Nicht angemeldet – du landest auf der Mailbox'
+  if (status === 'dnd') return 'Nicht stören – du landest auf der Mailbox'
+  if (phone === 'in_call') return 'Gerade im Gespräch'
+  if (status === 'away') return 'Abwesend – evtl. nicht am Platz'
+  return ''
+}
+
 export const STATUS_LABELS: Record<PresenceStatus, string> = {
   available: 'Verfügbar',
   busy:      'Beschäftigt',

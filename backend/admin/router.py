@@ -23,6 +23,7 @@ from telephony.service import (
     generate_sip_password,
     get_active_channels,
     list_pjsip_endpoints,
+    reload_pjsip,
     sip_md5_cred,
 )
 
@@ -187,6 +188,14 @@ async def admin_list_users(db: AsyncSession = Depends(get_db)) -> AdminUserList:
     return AdminUserList(users=users, keycloak_error=keycloak_error, next_extension=await _next_free_extension(db))
 
 
+async def _reload_pjsip() -> None:
+    """Nach dem Commit: Asterisk soll neue/geänderte Nebenstellen sofort richtig führen."""
+    try:
+        await reload_pjsip()
+    except Exception as exc:
+        logger.warning("[Admin] PJSIP-Reload fehlgeschlagen: %s", exc)
+
+
 @router.post("/users/{user_id}/sip", response_model=SipInfo, status_code=status.HTTP_201_CREATED)
 async def admin_assign_sip(user_id: str, body: AssignSip, db: AsyncSession = Depends(get_db)) -> SipAccount:
     if await db.scalar(select(SipAccount).where(SipAccount.user_id == user_id)):
@@ -219,7 +228,8 @@ async def admin_assign_sip(user_id: str, body: AssignSip, db: AsyncSession = Dep
         sip_md5_cred=sip_md5_cred(username, password),
     )
     db.add(account)
-    await db.flush()
+    await db.commit()
+    await _reload_pjsip()
     logger.warning("[Admin] Nebenstelle %s → %s (%s)", extension, username, kc.display_name)
     return account
 
@@ -236,7 +246,8 @@ async def admin_update_sip(account_id: int, body: UpdateSip, db: AsyncSession = 
         account.email = body.email.strip() or None
     if body.is_active is not None:
         account.is_active = body.is_active
-    await db.flush()
+    await db.commit()
+    await _reload_pjsip()
     logger.warning("[Admin] Nebenstelle %s geändert: %s", account.username, body.model_dump(exclude_none=True))
     return account
 

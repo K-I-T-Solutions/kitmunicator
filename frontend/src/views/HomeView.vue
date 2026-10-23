@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 import { Phone, Search, Users } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { usePhone } from '@/composables/usePhone'
-import { usePresence, STATUS_LABELS, type PresenceStatus, type TeamMember } from '@/composables/usePresence'
+import { usePresence, reachabilityNotice, STATUS_LABELS, type PresenceStatus, type TeamMember } from '@/composables/usePresence'
 import { useTeamVisibility } from '@/composables/useTeamVisibility'
 import UserAvatar from '@/components/ui/UserAvatar.vue'
 import PresenceDot from '@/components/ui/PresenceDot.vue'
@@ -36,13 +36,16 @@ function statusOf(member: TeamMember): PresenceStatus {
 function phoneOf(member: TeamMember) {
   return phoneStatuses[member.user_id] ?? member.phone_status
 }
-function canCall(member: TeamMember): boolean {
-  return !isBusy.value && statusOf(member) !== 'dnd'
+// Auch bei „Nicht stören“/offline anrufbar — man landet dann direkt auf der Mailbox
+function canCall(): boolean {
+  return !isBusy.value
+}
+function noticeOf(member: TeamMember): string {
+  return reachabilityNotice(statusOf(member), phoneOf(member))
 }
 function callTitle(member: TeamMember): string {
   if (isBusy.value) return 'Du bist bereits in einem Gespräch'
-  if (statusOf(member) === 'dnd') return `${member.username} möchte nicht gestört werden`
-  return `Durchwahl ${member.extension} anrufen`
+  return noticeOf(member) || `Durchwahl ${member.extension} anrufen`
 }
 
 onMounted(async () => {
@@ -129,7 +132,7 @@ onMounted(async () => {
         >
           <div class="relative" :class="{ 'opacity-60': phoneOf(member) === 'offline' }">
             <UserAvatar :name="member.username" />
-            <PresenceDot :status="statusOf(member)" size="xs" class="absolute -bottom-0.5 -right-0.5" />
+            <PresenceDot :status="phoneOf(member) === 'offline' ? 'offline' : statusOf(member)" size="xs" class="absolute -bottom-0.5 -right-0.5" />
           </div>
           <div class="min-w-0 flex-1">
             <div class="flex items-baseline gap-2">
@@ -138,18 +141,13 @@ onMounted(async () => {
             </div>
             <div class="mt-0.5 flex flex-wrap items-center gap-x-2">
               <PhoneStateBadge v-if="phoneOf(member) === 'ringing' || phoneOf(member) === 'in_call'" :state="phoneOf(member)" />
-              <template v-else>
-                <span class="text-xs text-muted">{{ STATUS_LABELS[statusOf(member)] }}</span>
-                <template v-if="phoneOf(member) === 'offline'">
-                  <span class="text-xs text-subtle" aria-hidden="true">·</span>
-                  <PhoneStateBadge state="offline" />
-                </template>
-              </template>
+              <span v-else-if="phoneOf(member) === 'offline'" class="text-xs text-subtle">Nicht angemeldet</span>
+              <span v-else class="text-xs text-muted">{{ STATUS_LABELS[statusOf(member)] }}</span>
             </div>
           </div>
           <button
             class="flex shrink-0 items-center gap-1.5 rounded-lg bg-cyan-500/10 px-2.5 py-1.5 text-xs font-medium text-brand transition-colors hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-40"
-            :disabled="!canCall(member)"
+            :disabled="!canCall()"
             :title="callTitle(member)"
             :aria-label="`${member.username} anrufen`"
             @click="call(member.extension, member.username)"

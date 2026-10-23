@@ -1,13 +1,13 @@
 import { computed } from 'vue'
 import { usePhone } from '@/composables/usePhone'
-import { usePresence } from '@/composables/usePresence'
+import { reachabilityNotice, usePresence } from '@/composables/usePresence'
 
 export type SipState = 'offline' | 'connecting' | 'registered' | 'error'
 
 /** Abgeleitete Anzeige-Werte für SIP-Status und laufenden Anruf */
 export function useActiveCall() {
   const { callState, remoteNumber, remoteName, isOnHold } = usePhone()
-  const { memberByExtension } = usePresence()
+  const { memberByExtension, statuses, phoneStatuses } = usePresence()
 
   const sipState = computed<SipState>(() => {
     switch (callState.value) {
@@ -34,5 +34,16 @@ export function useActiveCall() {
     return ''
   })
 
-  return { sipState, hasActiveCall, remoteDisplayName, callStatusLabel }
+  /** Beim Wählen: Hinweis, wenn der Kollege nicht normal erreichbar ist */
+  const calleeNotice = computed(() => {
+    if (callState.value !== 'calling') return ''
+    const member = memberByExtension(remoteNumber.value)
+    if (!member) return ''
+    return reachabilityNotice(
+      statuses[member.user_id] ?? member.status,
+      phoneStatuses[member.user_id] ?? member.phone_status,
+    )
+  })
+
+  return { sipState, hasActiveCall, remoteDisplayName, callStatusLabel, calleeNotice }
 }

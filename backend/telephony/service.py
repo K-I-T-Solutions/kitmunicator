@@ -71,6 +71,15 @@ async def list_pjsip_endpoints() -> list[dict[str, Any]]:
         return resp.json()
 
 
+async def reload_pjsip() -> None:
+    """res_pjsip neu laden: Realtime-Endpoints, die nach dem Asterisk-Start angelegt
+    wurden, bekommen erst dann eine Statusverfolgung (sonst bleiben sie 'Unavailable')."""
+    settings = get_settings()
+    async with _get_ari_client(settings) as client:
+        resp = await client.put("/ari/asterisk/modules/res_pjsip.so")
+        await _raise_for_ari(resp)
+
+
 async def get_active_channels() -> list[dict[str, Any]]:
     """Gibt alle aktiven Channels zurück (für Presence-Sync)."""
     settings = get_settings()

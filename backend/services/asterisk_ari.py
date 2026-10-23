@@ -2,7 +2,7 @@
 Asterisk ARI WebSocket Consumer.
 
 Verfolgt Anruf-State via Channel-Events und setzt:
-  - phone_status in UserPresence (ringing / in_call / idle)
+  - phone_status in UserPresence (ringing / in_call / idle, offline ohne Registrierung)
   - CallRecord (CDR) beim Beenden jedes Channels
   - missed_call-Event an den Angerufenen (ggf. mit Voicemail)
 """
@@ -23,6 +23,7 @@ from config import get_settings
 from database import AsyncSessionLocal
 from presence.models import UserPresence, PhoneStatus
 from telephony.models import SipAccount, CallRecord, CallDirection, CallStatus, Voicemail
+from telephony.service import list_pjsip_endpoints
 from telephony.voicemail_store import sync_mailbox
 
 log = logging.getLogger(__name__)
@@ -32,6 +33,9 @@ _active_channels: dict[str, set[str]] = {}
 
 # Offene CDR-Einträge pro Channel-ID
 _pending_calls: dict[str, dict] = {}
+
+# Registrierte SIP-Usernames (Endpoint-State "online")
+_online: set[str] = set()
 
 # Personen 10xx, Sammelrufe 20xx
 _INTERNAL_EXT = re.compile(r"^(10|20)\d{2}$")
@@ -252,8 +256,41 @@ def _mark_voicemail(event: dict, channel_id: str) -> None:
         _pending_calls[channel_id]["voicemail"] = True
 
 
+async def _set_endpoint_state(username: str, online: bool) -> None:
+    """Registrierung an/ab → offline bzw. idle, laufende Anrufe bleiben unberührt."""
+    if online:
+        _online.add(username)
+        if not _active_channels.get(username):
+            await _set_phone_status(username, PhoneStatus.idle)
+    else:
+        _online.discard(username)
+        await _set_phone_status(username, PhoneStatus.offline)
+
+
+async def _sync_endpoint_states() -> None:
+    """Nach (Re-)Connect: Registrierungsstand aller Endpoints übernehmen."""
+    try:
+        endpoints = await list_pjsip_endpoints()
+    except Exception as exc:
+        log.warning("Endpoint-Sync fehlgeschlagen: %s", exc)
+        return
+    _online.clear()
+    async with AsyncSessionLocal() as db:
+        known = set((await db.scalars(select(SipAccount.username))).all())
+    for ep in endpoints:
+        if ep.get("resource") in known:
+            await _set_endpoint_state(ep["resource"], ep.get("state") == "online")
+
+
 async def _handle_event(event: dict) -> None:
     event_type = event.get("type", "")
+    # Registrierung kommt als PeerStatusChange (Reachable/Unreachable) mit Endpoint-State
+    if event_type == "PeerStatusChange":
+        endpoint = event.get("endpoint", {})
+        if endpoint.get("technology") == "PJSIP" and endpoint.get("resource") != "sipgate_trunk":
+            await _set_endpoint_state(endpoint["resource"], endpoint.get("state") == "online")
+        return
+
     channel = event.get("channel", {})
     channel_name: str = channel.get("name", "")
     channel_id: str = channel.get("id", "")
@@ -327,7 +364,7 @@ async def _handle_event(event: dict) -> None:
         channels = _active_channels.get(username, set())
         channels.discard(channel_id)
         if not channels:
-            await _set_phone_status(username, PhoneStatus.idle)
+            await _set_phone_status(username, PhoneStatus.idle if username in _online else PhoneStatus.offline)
 
         cause = event.get("cause", 0)
         asyncio.ensure_future(_write_cdr(channel_id, cause))
@@ -353,6 +390,7 @@ async def ari_consumer() -> None:
                 backoff = 1
                 _active_channels.clear()
                 _pending_calls.clear()
+                await _sync_endpoint_states()
 
                 async for raw in ws:
                     try:
@@ -361,6 +399,7 @@ async def ari_consumer() -> None:
                         continue
                     if event.get("type") in (
                         "ChannelCreated", "ChannelDialplan", "ChannelStateChange", "ChannelDestroyed",
+                        "PeerStatusChange",
                     ):
                         await _handle_event(event)
 

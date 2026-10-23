@@ -20,7 +20,7 @@ from telephony.service import (
     sip_md5_cred,
 )
 from telephony.voicemail_store import sync_mailbox, resolve_audio
-from telephony.routing import group_dial_info, inbound_target
+from telephony.routing import callee_info, group_dial_info, inbound_target
 from telephony.greetings import (
     GreetingError, MAX_BYTES as GREETING_MAX_BYTES,
     delete_greeting, greeting_path, read_greeting, save_greeting,
@@ -429,6 +429,13 @@ async def extension_lookup(
         )
     )
     return account.username if account else ""
+
+
+@router.get("/internal/callee/{extension}", response_class=PlainTextResponse)
+async def callee_lookup(extension: str, db: AsyncSession = Depends(get_db)) -> str:
+    """Dialplan _10XX: 'username|status|push'. status = 'dnd' → nicht klingeln,
+    push = '1' → App per FCM wecken, wenn nicht registriert. Kein Auth — wie ext-lookup."""
+    return await callee_info(db, extension)
 
 
 @router.get("/internal/group/{extension}", response_class=PlainTextResponse)

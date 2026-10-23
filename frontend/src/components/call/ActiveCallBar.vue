@@ -5,7 +5,7 @@ import { useActiveCall } from '@/composables/useActiveCall'
 import { formatDuration } from '@/lib/format'
 
 const { callState, remoteNumber, isMuted, isOnHold, callDurationSeconds, hangup, mute, hold } = usePhone()
-const { remoteDisplayName, callStatusLabel } = useActiveCall()
+const { remoteDisplayName, callStatusLabel, calleeNotice } = useActiveCall()
 </script>
 
 <template>
@@ -20,7 +20,8 @@ const { remoteDisplayName, callStatusLabel } = useActiveCall()
       </div>
       <div class="min-w-0 flex-1">
         <p class="truncate text-sm font-medium text-fg">{{ remoteDisplayName }}</p>
-        <p v-if="remoteNumber && remoteNumber !== remoteDisplayName" class="truncate font-mono text-xs text-muted">{{ remoteNumber }}</p>
+        <p v-if="calleeNotice" class="truncate text-xs text-amber-400" role="status">{{ calleeNotice }}</p>
+        <p v-else-if="remoteNumber && remoteNumber !== remoteDisplayName" class="truncate font-mono text-xs text-muted">{{ remoteNumber }}</p>
       </div>
       <div class="shrink-0 text-right">
         <p class="text-[11px] font-medium uppercase tracking-wide text-brand">{{ callStatusLabel }}</p>
