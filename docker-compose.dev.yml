@@ -18,6 +18,8 @@ networks:
 volumes:
   asterisk_config_dev:
   asterisk_sounds_dev:
+  asterisk_voicemail_dev:
+  kitmunicator_greetings_dev:
 
 services:
 
@@ -38,6 +40,10 @@ services:
       # Hot-Reload: Quellcode direkt einbinden
       - ./backend:/app
       - ./mobile/kitmunicator-firebase-adminsdk-fbsvc-72c93a0022.json:/etc/firebase-adminsdk.json:ro
+      # Voicemail-Nachrichten aus Asterisk (nur lesen)
+      - asterisk_voicemail_dev:/var/spool/asterisk/voicemail:ro
+      # Eigene Voicemail-Ansagen (Backend schreibt)
+      - kitmunicator_greetings_dev:/var/lib/kitmunicator/greetings
     expose:
       - "8000"
     depends_on:
@@ -85,6 +91,13 @@ services:
     environment:
       # Externe IP für ICE-Kandidat — ASTERISK_LOCAL_IP wird automatisch ermittelt
       ASTERISK_PUBLIC_IP: ${ASTERISK_PUBLIC_IP}
+      # Realtime: Nutzer/Mailboxen aus der kitmunicator-DB
+      ASTERISK_DB_HOST: central_postgres
+      ASTERISK_DB_NAME: kitmunicator
+      ASTERISK_DB_USER: ${ASTERISK_DB_USER}
+      ASTERISK_DB_PASSWORD: ${ASTERISK_DB_PASSWORD}
+      # Header X-Internal-Secret für CURL() ans Backend (sub_backend im Dialplan)
+      ASTERISK_INTERNAL_SECRET: ${ASTERISK_INTERNAL_SECRET}
     # network_mode host wäre ideal für RTP/NAT, aber bricht
     # core_network-Kommunikation – daher explizite Port-Bindings
     ports:
@@ -100,6 +113,8 @@ services:
       - ./infra/asterisk:/etc/asterisk-tpl:ro
       - asterisk_config_dev:/var/lib/asterisk
       - asterisk_sounds_dev:/var/lib/asterisk/sounds
+      - asterisk_voicemail_dev:/var/spool/asterisk/voicemail
+      - kitmunicator_greetings_dev:/var/lib/kitmunicator/greetings:ro
     networks:
       - core_network
     healthcheck:

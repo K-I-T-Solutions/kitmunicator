@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Boolean, Enum as SAEnum
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Boolean, Column, Table, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -30,8 +30,13 @@ class SipAccount(Base):
     username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     # Durchwahl z.B. "1001"
     extension: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
-    # Fernet-verschlüsseltes SIP-Passwort
+    # Fernet-verschlüsseltes SIP-Passwort (für /accounts/me/credentials)
     password_encrypted: Mapped[str] = mapped_column(String(500), nullable=False)
+    # MD5(username:realm:password) für Asterisk (View ps_auths)
+    sip_md5_cred: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Anzeigename (CallerID) und E-Mail, aus Keycloak übernommen
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # FCM-Push-Token des Geräts — wird von der App nach Login gesetzt
     fcm_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -72,8 +77,11 @@ class Voicemail(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     sip_account_id: Mapped[int] = mapped_column(ForeignKey("sip_accounts.id"), nullable=False, index=True)
+    # msg_id aus der Asterisk-Metadatei — bleibt beim Umnummerieren gleich
+    asterisk_msg_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     caller_number: Mapped[str] = mapped_column(String(50), nullable=False)
-    # Pfad zur Audiodatei im Asterisk-Dateisystem
+    caller_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Pfad zur Audiodatei im eingehängten Asterisk-Spool
     file_path: Mapped[str] = mapped_column(String(500), nullable=False)
     duration_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -81,3 +89,33 @@ class Voicemail(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     sip_account: Mapped["SipAccount"] = relationship(back_populates="voicemails")
+
+
+# Mitglieder einer Sammelrufgruppe
+ring_group_members = Table(
+    "ring_group_members",
+    Base.metadata,
+    Column("group_id", ForeignKey("ring_groups.id", ondelete="CASCADE"), primary_key=True),
+    Column("sip_account_id", ForeignKey("sip_accounts.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class RingGroup(Base):
+    """Sammelruf: alle aktiven Mitglieder klingeln gleichzeitig.
+    Der Dialplan holt sich Dial-String und Fallback live vom Backend (_20XX)."""
+    __tablename__ = "ring_groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Durchwahl 20xx
+    extension: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    ring_timeout: Mapped[int] = mapped_column(Integer, default=25, nullable=False)
+    # Wohin, wenn niemand abnimmt (Durchwahl 10xx/20xx) — leer = auflegen
+    fallback_extension: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Sipgate-Rufnummer, normalisiert (ohne +49/0, nur Ziffern)
+    inbound_number: Mapped[str | None] = mapped_column(String(30), unique=True, nullable=True)
+    # Alle eingehenden Anrufe ohne passende Nummer (Hauptnummer)
+    inbound_catch_all: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    members: Mapped[list["SipAccount"]] = relationship(secondary=ring_group_members, lazy="selectin")

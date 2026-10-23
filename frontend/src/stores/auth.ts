@@ -18,6 +18,11 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = ref(false)
 
   const userId = computed(() => userProfile.value?.sub as string | undefined)
+  // Darf die Verwaltung sehen; das Backend prüft dieselbe Realm-Rolle
+  const isAdmin = computed(() => {
+    const roles = (userProfile.value?.realm_access as { roles?: string[] } | undefined)?.roles ?? []
+    return roles.includes('telephony_admin')
+  })
   const username = computed(() => userProfile.value?.preferred_username as string | undefined)
   const displayName = computed(() => {
     const p = userProfile.value
@@ -76,6 +81,7 @@ export const useAuthStore = defineStore('auth', () => {
     userProfile,
     isAuthenticated,
     userId,
+    isAdmin,
     username,
     displayName,
     init,

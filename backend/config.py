@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     # Öffentliche Issuer-URL aus dem JWT – leer = KEYCLOAK_URL verwenden
     KEYCLOAK_ISSUER: str = ""
 
+    # Keycloak-Service-Client (Admin-API: Nutzer lesen für die Verwaltung)
+    # Confidential Client mit Service-Account, Rollen realm-management: view-users, query-users
+    KEYCLOAK_ADMIN_CLIENT_ID: str = ""
+    KEYCLOAK_ADMIN_CLIENT_SECRET: str = ""
+
     # Asterisk ARI
     ASTERISK_ARI_URL: str
     ASTERISK_ARI_USER: str
@@ -28,8 +33,15 @@ class Settings(BaseSettings):
     FIREBASE_SERVICE_ACCOUNT_FILE: str = "/app/firebase-adminsdk.json"
     FCM_PROJECT_ID: str = "kitmunicator"
 
-    # Asterisk-Webhook: Erlaubte Quell-IPs (Komma-getrennt, leer = alle intern)
-    ASTERISK_WEBHOOK_SECRET: str = ""
+    # Gemeinsames Secret für Asterisk → Backend (/telephony/internal/*, Push-Webhook).
+    # Leer = alle internen Aufrufe werden abgelehnt.
+    ASTERISK_INTERNAL_SECRET: str = ""
+
+    # Asterisk-Voicemail-Spool (Volume, read-only eingehängt)
+    VOICEMAIL_SPOOL_DIR: str = "/var/spool/asterisk/voicemail"
+    VOICEMAIL_CONTEXT: str = "internal_vm"
+    # Eigene Ansagen (Volume, Backend schreibt, Asterisk liest)
+    GREETINGS_DIR: str = "/var/lib/kitmunicator/greetings"
 
     # Fernet-Schlüssel für reversible SIP-Passwortverschlüsselung
     SIP_ENCRYPTION_KEY: str

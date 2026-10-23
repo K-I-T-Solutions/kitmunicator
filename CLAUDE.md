@@ -6,6 +6,7 @@ Internes SIP/WebRTC-Kommunikationssystem für K.I.T. Solutions.
 
 - **Backend:** FastAPI + PostgreSQL + Alembic (async SQLAlchemy), Python 3.12
 - **Frontend:** Vue 3 (Composition API), SIP.js 0.21.x, Vite dev server
+- **UI:** Tailwind 3 + lucide-vue-next. Theme-Farben als CSS-Variablen (`--c-*`) in `frontend/src/assets/global.css`, Hell/Dunkel über `.dark` auf `<html>`. Schriften lokal via `@fontsource` (kein Google Fonts)
 - **Telefonie:** Asterisk 20.x, PJSIP WebRTC (Port 8089), ARI via App `kitmunicator`
 - **Auth:** Keycloak SSO, Realm `kit`, Client `kitmunicator`
 - **Reverse Proxy:** Caddy → `sip.kitmunicator.intern.phudevelopement.xyz`
@@ -14,13 +15,22 @@ Internes SIP/WebRTC-Kommunikationssystem für K.I.T. Solutions.
 
 - KITmunicator Backend + Asterisk auf cisco (192.168.178.x / Homelab)
 - TURN: coturn auf 192.168.178.100:3478
-- Aktueller Alembic-Stand: Migration 0004
+- Aktueller Alembic-Stand: Migration 0008
+
+## Asterisk Realtime (seit 2026-10-21)
+
+- Interne User/Mailboxen kommen **nicht** aus `pjsip.conf`/`voicemail.conf`, sondern aus Views auf `sip_accounts` (Migration 0006): `ps_endpoints`, `ps_auths` (md5_cred, kein Klartext), `ps_aors`, `voicemail_users`. Asterisk liest per `res_config_pgsql` (`sorcery.conf`, `extconfig.conf`, `res_pgsql.conf.tmpl` → Entrypoint).
+- Neuer User / sperren = DB-Update, wirkt sofort. Kein ARI-Endpoint-Anlegen mehr.
+- Realtime kennt keine Templates: Endpoint-Optionen stehen in der View `ps_endpoints` (Änderung = neue Migration).
+- Durchwahlen: Personen 10xx, Sammelrufgruppen 20xx (`ring_groups`, Dialplan `_20XX` holt Dial-String von `/telephony/internal/group/{ext}`), eingehend Sipgate → `/telephony/internal/inbound/{did}`.
+- Verwaltung: Web-App `/admin` (Rolle `telephony_admin`), Backend `backend/admin/`. Keycloak-Nutzerliste über Service-Client `KEYCLOAK_ADMIN_CLIENT_ID/SECRET` (realm-management: view-users, query-users).
 
 ## Abgeschlossene Features
 
 - Presence ↔ Asterisk Sync via ARI WebSocket (ChannelCreated/StateChange/Destroyed)
 - CDR-System: CallRecord bei ChannelDestroyed, caller_name + callee_name aus SipAccount-Lookup
 - Voicemail (deutsche Sounds), Trunk-Channel-Tracking
+- Voicemail im Web: Backend liest den Asterisk-Spool (Volume `asterisk_voicemail*`, im Backend read-only) und gleicht ihn bei `GET /telephony/voicemail` mit der DB ab (`telephony/voicemail_store.py`, Schlüssel `msg_id`). Kein Webhook mehr
 - Automatisches SIP-Onboarding via n8n-Workflow (Dialplan dynamisch, ext-lookup Endpoint)
 - Offboarding-Workflow (n8n-offboarding-workflow.json)
 - Nextcloud Talk auf file-01 (cloud.kit-it-koblenz.de) mit Keycloak SSO + TURN

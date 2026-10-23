@@ -1,9 +1,17 @@
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { usePhone } from '@/composables/usePhone'
 
 export type PresenceStatus = 'available' | 'busy' | 'away' | 'dnd'
 export type PhoneStatus = 'idle' | 'ringing' | 'in_call' | 'offline'
+
+/** Was ein Anrufer erwartet — passt zum Dialplan (_10XX). Leer = klingelt normal. */
+export function reachabilityNotice(status: PresenceStatus, phone: PhoneStatus): string {
+  if (phone === 'offline') return 'Nicht angemeldet – du landest auf der Mailbox'
+  if (status === 'dnd') return 'Nicht stören – du landest auf der Mailbox'
+  if (phone === 'in_call') return 'Gerade im Gespräch'
+  if (status === 'away') return 'Abwesend – evtl. nicht am Platz'
+  return ''
+}
 
 export const STATUS_LABELS: Record<PresenceStatus, string> = {
   available: 'Verfügbar',
@@ -25,8 +33,24 @@ export interface TeamMember {
 
 const statuses = reactive<Record<string, PresenceStatus>>({})
 const phoneStatuses = reactive<Record<string, PhoneStatus>>({})
+// Alle aktiven SIP-User inkl. des eigenen Accounts – gefüllt von loadTeam()
+const team = ref<TeamMember[]>([])
 const subscribedIds = new Set<string>()
 let ws: WebSocket | null = null
+
+export interface MissedCallEvent {
+  caller_number: string
+  caller_name: string | null
+  voicemail_id: number | null
+  at: string
+}
+const missedCallListeners = new Set<(e: MissedCallEvent) => void>()
+
+/** Verpasste Anrufe (Server-Event über den Presence-Socket). Gibt die Abmeldung zurück. */
+export function onMissedCall(listener: (e: MissedCallEvent) => void): () => void {
+  missedCallListeners.add(listener)
+  return () => missedCallListeners.delete(listener)
+}
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
 function _send(data: unknown) {
@@ -57,6 +81,9 @@ function _connect(token: string) {
     if (msg.type === 'presence') {
       statuses[msg.user_id] = msg.status
       if (msg.phone_status) phoneStatuses[msg.user_id] = msg.phone_status
+    } else if (msg.type === 'missed_call') {
+      const event = msg as unknown as MissedCallEvent
+      missedCallListeners.forEach(listener => listener(event))
     }
   }
 
@@ -100,8 +127,15 @@ export function usePresence() {
       statuses[m.user_id] = m.status
       phoneStatuses[m.user_id] = m.phone_status
     }
+    team.value = members
     return members
   }
 
-  return { statuses, phoneStatuses, init, subscribe, setMyStatus, loadTeam }
+  /** Durchwahl → Team-Mitglied (für Anrufer-Namen) */
+  function memberByExtension(extension: string | null | undefined): TeamMember | undefined {
+    if (!extension) return undefined
+    return team.value.find(m => m.extension === extension)
+  }
+
+  return { statuses, phoneStatuses, team, init, subscribe, setMyStatus, loadTeam, memberByExtension }
 }

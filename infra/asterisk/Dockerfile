@@ -1,12 +1,12 @@
 FROM andrius/asterisk:20
 
-# Deutsche Asterisk Core Sounds herunterladen (enthält vm-theperson, vm-isunavail etc.)
-RUN SOUNDS_DIR=/var/lib/asterisk/sounds/de && \
-    mkdir -p "${SOUNDS_DIR}" && \
-    wget -qO /tmp/de-sounds.tar.gz \
-      "https://downloads.asterisk.org/pub/telephony/sounds/asterisk-core-sounds-de-wav-current.tar.gz" && \
-    tar xzf /tmp/de-sounds.tar.gz -C "${SOUNDS_DIR}" --strip-components=1 && \
-    rm /tmp/de-sounds.tar.gz
+# Deutsche Ansagen (vm-theperson, vm-isunavail …) aus Debian — Asterisk selbst
+# veröffentlicht keine deutschen Core-Sounds. Landen unter
+# /usr/share/asterisk/sounds/de, der Entrypoint verlinkt sie ins Sounds-Volume.
+# Englische Core-Sounds als Fallback — u. a. für "beep" vor der Voicemail-Aufnahme.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends asterisk-prompt-de asterisk-core-sounds-en-gsm && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY entrypoint.sh /docker-entrypoint-rtp.sh
 RUN chmod +x /docker-entrypoint-rtp.sh

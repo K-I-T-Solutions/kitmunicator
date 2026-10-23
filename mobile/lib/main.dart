@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'core/auth/auth_service.dart';
 import 'core/push/push_service.dart';
+import 'core/sip/sip_credentials.dart';
 import 'core/sip/sip_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/dialer_screen.dart';
@@ -99,17 +100,26 @@ class AppShell extends ConsumerWidget {
 class _DialerWithSip extends ConsumerWidget {
   const _DialerWithSip();
 
+  static const _sipDomain = String.fromEnvironment('SIP_DOMAIN', defaultValue: 'kitmunicator.intern.phudevelopement.xyz');
+  static const _wsServer  = String.fromEnvironment('SIP_WS_SERVER', defaultValue: 'wss://sip.kitmunicator.intern.phudevelopement.xyz/ws');
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final auth = ref.watch(authProvider);
-    final sip  = ref.watch(sipProvider);
+    final auth  = ref.watch(authProvider);
+    final sip   = ref.watch(sipProvider);
+    final creds = ref.watch(sipCredentialsProvider);
 
-    if (auth.isAuthenticated && sip.callState == PhoneState.idle) {
+    if (creds.hasError) {
+      return const Center(child: Text('Kein SIP-Account eingerichtet oder Server nicht erreichbar'));
+    }
+
+    final account = creds.valueOrNull;
+    if (account != null && sip.callState == PhoneState.idle) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ref.read(sipProvider.notifier).setup(
-          sipUri: 'sip:${auth.username ?? auth.userId}@${const String.fromEnvironment('SIP_DOMAIN', defaultValue: 'kitmunicator.intern.phudevelopement.xyz')}',
-          password: const String.fromEnvironment('SIP_PASSWORD', defaultValue: 'f56374624bca48ce9eecffd6'),
-          wsServer: const String.fromEnvironment('SIP_WS_SERVER', defaultValue: 'wss://sip.kitmunicator.intern.phudevelopement.xyz/ws'),
+          sipUri: 'sip:${account.username}@$_sipDomain',
+          password: account.password,
+          wsServer: _wsServer,
           displayName: auth.displayName ?? '',
         );
       });

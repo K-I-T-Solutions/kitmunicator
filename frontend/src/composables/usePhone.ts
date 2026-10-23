@@ -9,6 +9,7 @@ export function usePhone() {
   const {
     callState,
     remoteNumber,
+    remoteName,
     isMuted,
     isOnHold,
     callDurationSeconds,
@@ -32,9 +33,9 @@ export function usePhone() {
     await store.setup(sipUri, password, wsServer)
   }
 
-  async function call(target: string): Promise<void> {
+  async function call(target: string, name?: string): Promise<void> {
     if (!isRegistered.value) await register()
-    await store.call(target)
+    await store.call(target, name)
   }
 
   function hangup(): Promise<void> {
@@ -53,6 +54,10 @@ export function usePhone() {
     return store.toggleHold()
   }
 
+  function sendDtmf(tone: string): void {
+    store.sendDtmf(tone)
+  }
+
   // Dauer formatiert als MM:SS
   function formatDuration(seconds: number): string {
     const m = Math.floor(seconds / 60).toString().padStart(2, '0')
@@ -63,6 +68,7 @@ export function usePhone() {
   return {
     callState,
     remoteNumber,
+    remoteName,
     isMuted,
     isOnHold,
     callDurationSeconds,
@@ -76,5 +82,6 @@ export function usePhone() {
     answer,
     mute,
     hold,
+    sendDtmf,
   }
 }

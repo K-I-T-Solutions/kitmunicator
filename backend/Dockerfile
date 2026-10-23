@@ -31,8 +31,11 @@ COPY --from=deps /install /usr/local
 COPY . .
 
 # Nicht-root User für Sicherheit
+# Ansagen-Verzeichnis vorab anlegen: ein frisches Volume übernimmt den Besitzer
 RUN adduser --system --no-create-home --group appuser \
-    && chown -R appuser:appuser /app
+    && chown -R appuser:appuser /app \
+    && mkdir -p /var/lib/kitmunicator/greetings \
+    && chown appuser:appuser /var/lib/kitmunicator/greetings
 USER appuser
 
 ENV PYTHONUNBUFFERED=1 \

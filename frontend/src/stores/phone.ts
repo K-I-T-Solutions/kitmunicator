@@ -16,6 +16,8 @@ export type CallState = 'idle' | 'registering' | 'registered' | 'calling' | 'inc
 export const usePhoneStore = defineStore('phone', () => {
   const callState = ref<CallState>('idle')
   const remoteNumber = ref<string | null>(null)
+  // Anzeigename der Gegenstelle (SIP Display-Name bzw. vom Aufrufer übergeben)
+  const remoteName = ref<string | null>(null)
   const isMuted = ref(false)
   const isOnHold = ref(false)
   const callDurationSeconds = ref(0)
@@ -33,6 +35,8 @@ export const usePhoneStore = defineStore('phone', () => {
   // damit Chrome die Autoplay-Policy nicht blockiert.
   let _audioCtx: AudioContext | null = null
   let _sourceNode: MediaStreamAudioSourceNode | null = null
+  const _keepAliveAudio = new Audio()
+  _keepAliveAudio.muted = true
 
   const isRegistered = computed(() => callState.value === 'registered')
   const isBusy = computed(() => ['calling', 'incoming', 'connected'].includes(callState.value))
@@ -64,8 +68,13 @@ export const usePhoneStore = defineStore('phone', () => {
         return
       }
       try {
+        const stream = new MediaStream([track])
+        // Chrome liefert Remote-WebRTC-Audio nur an den AudioContext, wenn der
+        // Stream zusätzlich an einem Media-Element hängt – stumm, damit nichts doppelt spielt
+        _keepAliveAudio.srcObject = stream
+        _keepAliveAudio.play().catch(() => {})
         _sourceNode?.disconnect()
-        _sourceNode = _audioCtx.createMediaStreamSource(new MediaStream([track]))
+        _sourceNode = _audioCtx.createMediaStreamSource(stream)
         _sourceNode.connect(_audioCtx.destination)
         console.log('[Phone] AudioContext source verbunden – Audio sollte spielen')
       } catch (err) {
@@ -109,6 +118,7 @@ export const usePhoneStore = defineStore('phone', () => {
       case SessionState.Terminated:
         callState.value = 'registered'
         remoteNumber.value = null
+        remoteName.value = null
         isMuted.value = false
         isOnHold.value = false
         activeSession.value = null
@@ -142,6 +152,7 @@ export const usePhoneStore = defineStore('phone', () => {
         onInvite(invitation: Invitation) {
           activeSession.value = invitation
           remoteNumber.value = invitation.remoteIdentity.uri.user ?? 'Unbekannt'
+          remoteName.value = invitation.remoteIdentity.displayName || null
           callState.value = 'incoming'
           invitation.stateChange.addListener((state) => _onSessionStateChange(state, invitation))
         },
@@ -176,7 +187,7 @@ export const usePhoneStore = defineStore('phone', () => {
     return Promise.resolve({ ...description, sdp: filtered })
   }
 
-  async function call(target: string): Promise<void> {
+  async function call(target: string, name?: string): Promise<void> {
     if (!userAgent.value || !isRegistered.value) return
     const targetUri = UserAgent.makeURI(`sip:${target}@${import.meta.env.VITE_SIP_DOMAIN}`)
     if (!targetUri) return
@@ -187,6 +198,7 @@ export const usePhoneStore = defineStore('phone', () => {
     const inviter = new Inviter(userAgent.value, targetUri)
     activeSession.value = inviter
     remoteNumber.value = target
+    remoteName.value = name ?? null
     callState.value = 'calling'
 
     inviter.stateChange.addListener((state) => _onSessionStateChange(state, inviter))
@@ -204,6 +216,7 @@ export const usePhoneStore = defineStore('phone', () => {
       callState.value = 'registered'
       activeSession.value = null
       remoteNumber.value = null
+      remoteName.value = null
     }
   }
 
@@ -249,6 +262,14 @@ export const usePhoneStore = defineStore('phone', () => {
     isMuted.value = !isMuted.value
   }
 
+  /** Tastenton ins Gespräch senden (RFC 4733, passt zu dtmf_mode im Endpoint) */
+  function sendDtmf(tone: string): void {
+    const session = activeSession.value
+    if (!session || session.state !== SessionState.Established) return
+    const sdh = session.sessionDescriptionHandler as { sendDtmf?: (tones: string) => boolean } | undefined
+    if (!sdh?.sendDtmf?.(tone)) console.warn('DTMF konnte nicht gesendet werden:', tone)
+  }
+
   async function toggleHold(): Promise<void> {
     if (!activeSession.value) return
     if (isOnHold.value) {
@@ -262,6 +283,7 @@ export const usePhoneStore = defineStore('phone', () => {
   return {
     callState,
     remoteNumber,
+    remoteName,
     isMuted,
     isOnHold,
     callDurationSeconds,
@@ -274,5 +296,6 @@ export const usePhoneStore = defineStore('phone', () => {
     answer,
     toggleMute,
     toggleHold,
+    sendDtmf,
   }
 })

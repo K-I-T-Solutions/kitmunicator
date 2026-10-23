@@ -4,9 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="KITmunicator – Internes Kommunikationssystem" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;800&display=swap" rel="stylesheet" />
+    <script>
+      // Theme vor dem ersten Rendern setzen (kein Aufblitzen). Standard: dunkel.
+      try {
+        if (localStorage.getItem('kitmunicator:theme') !== 'light') document.documentElement.classList.add('dark')
+      } catch {
+        document.documentElement.classList.add('dark')
+      }
+    </script>
     <link rel="icon" type="image/png" href="/favicon.png" />
     <title>KITmunicator</title>
   </head>

@@ -4,22 +4,26 @@ from typing import Any
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import get_settings
 from database import get_db
 from keycloak import get_current_user, require_role
 from telephony.models import SipAccount, CallRecord, Voicemail, CallDirection, CallStatus
 from telephony.service import (
-    create_sip_endpoint,
-    delete_sip_endpoint,
     generate_sip_password,
     encrypt_password,
     decrypt_password,
-    ARIError,
+    sip_md5_cred,
+)
+from telephony.voicemail_store import sync_mailbox, resolve_audio
+from telephony.internal_auth import require_internal_secret
+from telephony.routing import callee_info, group_dial_info, inbound_target
+from telephony.greetings import (
+    GreetingError, MAX_BYTES as GREETING_MAX_BYTES,
+    delete_greeting, greeting_path, read_greeting, save_greeting,
 )
 from push.fcm_service import send_incoming_call_push, FCMError
 
@@ -71,6 +75,7 @@ class CallRecordOut(BaseModel):
 class VoicemailOut(BaseModel):
     id: int
     caller_number: str
+    caller_name: str | None
     duration_seconds: int
     is_read: bool
     received_at: datetime
@@ -95,16 +100,13 @@ async def create_account(
 
     password = generate_sip_password()
 
-    try:
-        await create_sip_endpoint(body.username, password, body.extension)
-    except ARIError as e:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Asterisk-Fehler: {e.detail}")
-
+    # Asterisk sieht den Account sofort über die Realtime-Views
     account = SipAccount(
         user_id=target_user_id,
         username=body.username,
         extension=body.extension,
         password_encrypted=encrypt_password(password),
+        sip_md5_cred=sip_md5_cred(body.username, password),
     )
     db.add(account)
     await db.flush()
@@ -171,11 +173,7 @@ async def delete_account(
     if not account:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "SIP-Account nicht gefunden")
 
-    try:
-        await delete_sip_endpoint(account.username)
-    except ARIError as e:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Asterisk-Fehler: {e.detail}")
-
+    # Verschwindet damit auch aus den Realtime-Views
     await db.delete(account)
 
 
@@ -222,6 +220,8 @@ async def list_voicemail(
     if not account:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Kein SIP-Account gefunden")
 
+    await sync_mailbox(db, account)
+
     query = select(Voicemail).where(Voicemail.sip_account_id == account.id)
     if unread_only:
         query = query.where(Voicemail.is_read == False)  # noqa: E712
@@ -231,29 +231,106 @@ async def list_voicemail(
     return list(result.all())
 
 
+async def _get_own_voicemail(db: AsyncSession, user_id: str, voicemail_id: int) -> Voicemail:
+    vm = await db.scalar(
+        select(Voicemail)
+        .join(SipAccount, Voicemail.sip_account_id == SipAccount.id)
+        .where(Voicemail.id == voicemail_id, SipAccount.user_id == user_id)
+    )
+    if not vm:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Voicemail nicht gefunden")
+    return vm
+
+
 @router.patch("/voicemail/{voicemail_id}/read", response_model=VoicemailOut)
 async def mark_voicemail_read(
     voicemail_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ) -> Voicemail:
-    account = await db.scalar(
-        select(SipAccount).where(SipAccount.user_id == current_user["sub"])
-    )
-    if not account:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kein SIP-Account gefunden")
-
-    vm = await db.scalar(
-        select(Voicemail).where(
-            Voicemail.id == voicemail_id,
-            Voicemail.sip_account_id == account.id,
-        )
-    )
-    if not vm:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Voicemail nicht gefunden")
-
+    vm = await _get_own_voicemail(db, current_user["sub"], voicemail_id)
     vm.is_read = True
     return vm
+
+
+@router.get("/voicemail/{voicemail_id}/audio", response_class=FileResponse)
+async def get_voicemail_audio(
+    voicemail_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> FileResponse:
+    vm = await _get_own_voicemail(db, current_user["sub"], voicemail_id)
+    path = resolve_audio(vm)
+    if not path:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Audiodatei nicht gefunden")
+    return FileResponse(path, media_type="audio/wav")
+
+
+# ── Eigene Voicemail-Ansage ───────────────────────────────────────────────────
+
+class GreetingOut(BaseModel):
+    exists: bool
+    duration_seconds: int | None = None
+    updated_at: datetime | None = None
+
+
+async def _my_account(db: AsyncSession, user_id: str) -> SipAccount:
+    account = await db.scalar(select(SipAccount).where(SipAccount.user_id == user_id))
+    if not account:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Kein SIP-Account gefunden")
+    return account
+
+
+@router.get("/greeting", response_model=GreetingOut)
+async def get_greeting(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> GreetingOut:
+    account = await _my_account(db, current_user["sub"])
+    info = read_greeting(account.extension)
+    if not info:
+        return GreetingOut(exists=False)
+    return GreetingOut(exists=True, duration_seconds=info.duration_seconds, updated_at=info.updated_at)
+
+
+@router.get("/greeting/audio", response_class=FileResponse)
+async def get_greeting_audio(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> FileResponse:
+    account = await _my_account(db, current_user["sub"])
+    path = greeting_path(account.extension)
+    if not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Keine eigene Ansage")
+    return FileResponse(path, media_type="audio/wav")
+
+
+@router.put("/greeting", response_model=GreetingOut)
+async def put_greeting(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> GreetingOut:
+    """Body: rohes WAV (16 kHz, 16 bit, mono), vom Browser erzeugt."""
+    account = await _my_account(db, current_user["sub"])
+    data = await request.body()
+    if len(data) > GREETING_MAX_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Ansage zu groß")
+    try:
+        info = save_greeting(account.extension, data)
+    except GreetingError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
+    logger.info("[Voicemail] Neue Ansage für %s (%ds)", account.username, info.duration_seconds)
+    return GreetingOut(exists=True, duration_seconds=info.duration_seconds, updated_at=info.updated_at)
+
+
+@router.delete("/greeting", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_greeting(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> None:
+    account = await _my_account(db, current_user["sub"])
+    delete_greeting(account.extension)
 
 
 # ── FCM Push-Token ────────────────────────────────────────────────────────────
@@ -286,35 +363,20 @@ class IncomingCallWebhook(BaseModel):
     callee_extension: str
     # Asterisk UNIQUEID des Channels — wird als CallKit-UUID verwendet
     uuid: str = ""
-    # Optionaler Webhook-Secret-Header zur Absicherung
-    secret: str = ""
 
 
-class VoicemailWebhook(BaseModel):
-    extension: str
-    caller_number: str
-    caller_name: str = ""
-    duration: int = 0
-    file_path: str = ""
-
-
-@router.post("/webhook/incoming-call", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/webhook/incoming-call",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_internal_secret)],
+)
 async def incoming_call_webhook(
     body: IncomingCallWebhook,
-    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Asterisk ruft diesen Endpoint auf, wenn ein Anruf eingeht und der
     SIP-Endpoint nicht erreichbar ist (CHANUNAVAIL). Das Backend schickt
     dann einen FCM-Push an das Gerät des Nutzers."""
-    settings = get_settings()
-
-    # Webhook-Secret prüfen (wenn konfiguriert)
-    if settings.ASTERISK_WEBHOOK_SECRET:
-        header_secret = request.headers.get("X-Webhook-Secret", "")
-        if header_secret != settings.ASTERISK_WEBHOOK_SECRET:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Ungültiges Webhook-Secret")
-
     account = await db.scalar(
         select(SipAccount).where(SipAccount.extension == body.callee_extension)
     )
@@ -346,13 +408,17 @@ async def incoming_call_webhook(
         logger.error("[FCM] Fehler beim Push: %s (HTTP %s)", e.detail, e.status_code)
 
 
-@router.get("/internal/ext-lookup/{extension}", response_class=PlainTextResponse)
+@router.get(
+    "/internal/ext-lookup/{extension}",
+    response_class=PlainTextResponse,
+    dependencies=[Depends(require_internal_secret)],
+)
 async def extension_lookup(
     extension: str,
     db: AsyncSession = Depends(get_db),
 ) -> str:
     """Interner Asterisk-Dialplan-Lookup: Durchwahl → SIP-Username.
-    Kein Auth — nur aus dem internen Docker-Netz erreichbar."""
+    Nur mit X-Internal-Secret (Asterisk)."""
     account = await db.scalar(
         select(SipAccount).where(
             SipAccount.extension == extension,
@@ -362,33 +428,36 @@ async def extension_lookup(
     return account.username if account else ""
 
 
-@router.post("/webhook/voicemail", status_code=status.HTTP_204_NO_CONTENT)
-async def voicemail_webhook(
-    body: VoicemailWebhook,
+@router.get(
+    "/internal/callee/{extension}",
+    response_class=PlainTextResponse,
+    dependencies=[Depends(require_internal_secret)],
+)
+async def callee_lookup(extension: str, db: AsyncSession = Depends(get_db)) -> str:
+    """Dialplan _10XX: 'username|status|push'. status = 'dnd' → nicht klingeln,
+    push = '1' → App per FCM wecken, wenn nicht registriert."""
+    return await callee_info(db, extension)
+
+
+@router.get(
+    "/internal/group/{extension}",
+    response_class=PlainTextResponse,
+    dependencies=[Depends(require_internal_secret)],
+)
+async def group_lookup(
+    extension: str,
+    caller: str = Query("", description="SIP-Username des Anrufers, klingelt nicht mit"),
     db: AsyncSession = Depends(get_db),
-) -> None:
-    """Asterisk ruft diesen Endpoint nach jeder aufgezeichneten Voicemail auf."""
-    if body.duration < 1:
-        return
+) -> str:
+    """Dialplan _20XX: 'timeout|Dial-String|Fallback'."""
+    return await group_dial_info(db, extension, exclude_username=caller)
 
-    account = await db.scalar(
-        select(SipAccount).where(SipAccount.extension == body.extension)
-    )
-    if not account:
-        logger.warning("[Voicemail] Kein Account für Durchwahl %s", body.extension)
-        return
 
-    voicemail = Voicemail(
-        sip_account_id=account.id,
-        caller_number=body.caller_number,
-        file_path=body.file_path,
-        duration_seconds=body.duration,
-        is_read=False,
-        received_at=datetime.utcnow(),
-    )
-    db.add(voicemail)
-    await db.commit()
-    logger.info(
-        "[Voicemail] %s ← %s (%ds) gespeichert",
-        account.username, body.caller_number, body.duration,
-    )
+@router.get(
+    "/internal/inbound/{dialed}",
+    response_class=PlainTextResponse,
+    dependencies=[Depends(require_internal_secret)],
+)
+async def inbound_lookup(dialed: str, db: AsyncSession = Depends(get_db)) -> str:
+    """Dialplan from_trunk: angerufene Nummer → Ziel-Durchwahl (leer = keine Zuordnung)."""
+    return await inbound_target(db, dialed)

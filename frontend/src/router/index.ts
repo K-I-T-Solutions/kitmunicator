@@ -3,6 +3,10 @@ import { useAuthStore } from '@/stores/auth'
 
 const router = createRouter({
   history: createWebHistory(),
+  // Sprungmarken wie /settings#ansage; main ist der Scroll-Container, daher per scrollIntoView
+  scrollBehavior(to) {
+    if (to.hash) setTimeout(() => document.querySelector(to.hash)?.scrollIntoView({ behavior: 'smooth' }), 300)
+  },
   routes: [
     {
       path: '/',
@@ -14,19 +18,31 @@ const router = createRouter({
       path: '/dialer',
       name: 'dialer',
       component: () => import('@/views/DialerView.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, title: 'Telefon' },
+    },
+    {
+      path: '/voicemail',
+      name: 'voicemail',
+      component: () => import('@/views/VoicemailView.vue'),
+      meta: { requiresAuth: true, title: 'Voicemail' },
     },
     {
       path: '/contacts',
       name: 'contacts',
       component: () => import('@/views/ContactsView.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, title: 'Kontakte' },
+    },
+    {
+      path: '/admin',
+      name: 'admin',
+      component: () => import('@/views/AdminView.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true, title: 'Verwaltung' },
     },
     {
       path: '/settings',
       name: 'settings',
       component: () => import('@/views/SettingsView.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, title: 'Einstellungen' },
     },
   ],
 })
@@ -37,6 +53,7 @@ router.beforeEach((to) => {
     // init() hat den Login bereits ausgelöst – hier nur blockieren
     return false
   }
+  if (to.meta.requiresAdmin && !auth.isAdmin) return { name: 'home' }
 })
 
 export default router

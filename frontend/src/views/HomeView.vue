@@ -1,316 +1,162 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
+import { Phone, Search, Users } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { usePhone } from '@/composables/usePhone'
-import { usePresence, STATUS_LABELS, type PresenceStatus, type TeamMember } from '@/composables/usePresence'
+import { usePresence, reachabilityNotice, STATUS_LABELS, type PresenceStatus, type TeamMember } from '@/composables/usePresence'
+import { useTeamVisibility } from '@/composables/useTeamVisibility'
+import UserAvatar from '@/components/ui/UserAvatar.vue'
+import PresenceDot from '@/components/ui/PresenceDot.vue'
+import PresencePicker from '@/components/ui/PresencePicker.vue'
+import PhoneStateBadge from '@/components/ui/PhoneStateBadge.vue'
 
 const auth = useAuthStore()
-const { call } = usePhone()
-const { statuses, phoneStatuses, init, subscribe, setMyStatus, loadTeam } = usePresence()
+const { call, isBusy } = usePhone()
+const { statuses, phoneStatuses, team, subscribe, setMyStatus, loadTeam } = usePresence()
+const { isVisible } = useTeamVisibility()
 
-const team = ref<TeamMember[]>([])
-const showStatusMenu = ref(false)
+const loading = ref(team.value.length === 0)
+const query = ref('')
 
-const VISIBLE_KEY = 'kitmunicator:presence:visible'
+const me = computed(() => team.value.find(m => m.user_id === auth.userId))
+const myStatus = computed<PresenceStatus>(() => (auth.userId && statuses[auth.userId]) || 'available')
 
-function loadVisibleIds(): Set<string> | null {
-  try {
-    const raw = localStorage.getItem(VISIBLE_KEY)
-    return raw ? new Set(JSON.parse(raw) as string[]) : null
-  } catch {
-    return null
-  }
-}
-
-const visibleIds = ref<Set<string> | null>(loadVisibleIds())
-
-const visibleTeam = computed(() => {
-  if (!visibleIds.value) return team.value
-  return team.value.filter(m => visibleIds.value!.has(m.user_id))
+const colleagues = computed(() => team.value.filter(m => m.user_id !== auth.userId))
+const shown = computed(() => colleagues.value.filter(m => isVisible(m.user_id)))
+const filtered = computed(() => {
+  const q = query.value.trim().toLowerCase()
+  if (!q) return shown.value
+  return shown.value.filter(m => m.username.toLowerCase().includes(q) || m.extension.includes(q))
 })
 
-const myStatus = computed<PresenceStatus>(() =>
-  auth.userId ? (statuses[auth.userId] ?? 'available') : 'available'
-)
-
-const statusOrder: PresenceStatus[] = ['available', 'busy', 'dnd', 'away']
-
-async function selectStatus(s: PresenceStatus) {
-  showStatusMenu.value = false
-  await setMyStatus(s)
+function statusOf(member: TeamMember): PresenceStatus {
+  return statuses[member.user_id] ?? member.status
+}
+function phoneOf(member: TeamMember) {
+  return phoneStatuses[member.user_id] ?? member.phone_status
+}
+// Auch bei „Nicht stören“/offline anrufbar — man landet dann direkt auf der Mailbox
+function canCall(): boolean {
+  return !isBusy.value
+}
+function noticeOf(member: TeamMember): string {
+  return reachabilityNotice(statusOf(member), phoneOf(member))
+}
+function callTitle(member: TeamMember): string {
+  if (isBusy.value) return 'Du bist bereits in einem Gespräch'
+  return noticeOf(member) || `Durchwahl ${member.extension} anrufen`
 }
 
 onMounted(async () => {
-  init()
-  team.value = await loadTeam()
-  subscribe(team.value.map(m => m.user_id))
+  const members = await loadTeam()
+  subscribe(members.map(m => m.user_id))
+  loading.value = false
 })
 </script>
 
 <template>
-  <div class="home">
-
-    <!-- Eigener Status -->
-    <section class="own-status-card">
-      <div class="own-status-inner">
-        <div class="own-avatar">
-          <span class="dot" :class="myStatus" />
+  <div class="mx-auto max-w-5xl space-y-6 px-4 py-6 md:px-6">
+    <!-- Mein Status -->
+    <section class="rounded-2xl border border-line/60 bg-surface p-5" aria-labelledby="my-status-title">
+      <h2 id="my-status-title" class="mb-4 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted">
+        <Users class="h-3.5 w-3.5" /> Mein Status
+      </h2>
+      <div class="flex flex-wrap items-center gap-4">
+        <div class="relative">
+          <UserAvatar :name="auth.displayName || '?'" size="lg" />
+          <PresenceDot :status="myStatus" class="absolute -bottom-0.5 -right-0.5" />
         </div>
-        <div class="own-info">
-          <p class="own-name">{{ auth.displayName }}</p>
-          <p class="own-sub">Mein Status</p>
+        <!-- Mindestbreite: auf schmalen Displays rutscht der Status-Auswähler in eine eigene Zeile -->
+        <div class="min-w-[11rem] flex-1">
+          <p class="truncate text-lg font-semibold text-fg">{{ auth.displayName }}</p>
+          <p class="text-sm text-muted">
+            <template v-if="me">Nebenstelle {{ me.extension }}</template>
+            <template v-else-if="!loading">Kein SIP-Account eingerichtet</template>
+          </p>
         </div>
-        <div class="status-picker">
-          <button class="status-btn" @click="showStatusMenu = !showStatusMenu">
-            {{ STATUS_LABELS[myStatus] }}
-            <span class="chevron">▾</span>
-          </button>
-          <div v-if="showStatusMenu" class="status-dropdown">
-            <button
-              v-for="s in statusOrder"
-              :key="s"
-              class="status-option"
-              :class="{ active: myStatus === s }"
-              @click="selectStatus(s)"
-            >
-              <span class="dot" :class="s" />
-              {{ STATUS_LABELS[s] }}
-            </button>
-          </div>
-        </div>
+        <PresencePicker :model-value="myStatus" @update:model-value="setMyStatus" />
       </div>
     </section>
 
-    <!-- Team-Übersicht -->
-    <section class="team-section">
-      <h2 class="section-title">Team</h2>
-
-      <div v-if="visibleTeam.length === 0" class="empty">
-        Keine Mitglieder konfiguriert — gehe zu den Einstellungen.
+    <!-- Team -->
+    <section aria-labelledby="team-title">
+      <div class="mb-4 flex items-center justify-between gap-3">
+        <h2 id="team-title" class="text-sm font-semibold text-fg">Teammitglieder</h2>
+        <label class="relative max-w-xs flex-1">
+          <span class="sr-only">Team durchsuchen</span>
+          <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
+          <input
+            v-model="query"
+            type="search"
+            placeholder="Name oder Durchwahl…"
+            class="w-full rounded-lg border border-line/60 bg-surface py-2 pl-9 pr-3 text-sm text-fg placeholder:text-subtle focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
+          />
+        </label>
       </div>
 
-      <ul v-else class="team-list">
-        <li
-          v-for="member in visibleTeam"
-          :key="member.user_id"
-          class="team-row"
-        >
-          <span class="dot-wrap">
-            <span class="dot" :class="statuses[member.user_id] ?? 'away'" />
-            <span
-              v-if="phoneStatuses[member.user_id] === 'ringing' || phoneStatuses[member.user_id] === 'in_call'"
-              class="phone-indicator"
-              :class="phoneStatuses[member.user_id]"
-            >📞</span>
-          </span>
-          <div class="member-info">
-            <span class="member-name">{{ member.username }}</span>
-            <span class="member-ext">{{ member.extension }}</span>
+      <!-- Laden -->
+      <div v-if="loading" class="grid gap-3 sm:grid-cols-2" aria-busy="true">
+        <div v-for="i in 4" :key="i" class="flex animate-pulse items-center gap-3 rounded-xl border border-line/60 bg-surface p-3.5">
+          <span class="h-10 w-10 rounded-full bg-raised" />
+          <div class="flex-1 space-y-2">
+            <span class="block h-3 w-1/3 rounded bg-raised" />
+            <span class="block h-2.5 w-1/4 rounded bg-raised" />
           </div>
-          <span class="member-status-label" :class="{ 'phone-active': phoneStatuses[member.user_id] === 'ringing' || phoneStatuses[member.user_id] === 'in_call' }">
-            <template v-if="phoneStatuses[member.user_id] === 'ringing'">Klingelt</template>
-            <template v-else-if="phoneStatuses[member.user_id] === 'in_call'">Im Gespräch</template>
-            <template v-else>{{ STATUS_LABELS[statuses[member.user_id] ?? 'away'] }}</template>
-          </span>
+        </div>
+      </div>
+
+      <!-- Leer -->
+      <div v-else-if="filtered.length === 0" class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-line py-14 text-center">
+        <span class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-raised text-subtle">
+          <Users class="h-6 w-6" />
+        </span>
+        <template v-if="colleagues.length === 0">
+          <p class="text-sm text-fg">Noch keine Kollegen mit SIP-Account.</p>
+        </template>
+        <template v-else-if="shown.length === 0">
+          <p class="text-sm text-fg">Keine Mitglieder ausgewählt.</p>
+          <RouterLink to="/settings" class="mt-1 text-sm text-brand hover:underline">In den Einstellungen auswählen</RouterLink>
+        </template>
+        <template v-else>
+          <p class="text-sm text-fg">Niemand gefunden für „{{ query }}“.</p>
+        </template>
+      </div>
+
+      <!-- Liste -->
+      <ul v-else class="grid gap-3 sm:grid-cols-2">
+        <li
+          v-for="member in filtered"
+          :key="member.user_id"
+          class="group flex items-center gap-3 rounded-xl border border-line/60 bg-surface p-3.5 transition-colors hover:border-line"
+        >
+          <div class="relative" :class="{ 'opacity-60': phoneOf(member) === 'offline' }">
+            <UserAvatar :name="member.username" />
+            <PresenceDot :status="phoneOf(member) === 'offline' ? 'offline' : statusOf(member)" size="xs" class="absolute -bottom-0.5 -right-0.5" />
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-baseline gap-2">
+              <p class="truncate text-sm font-medium text-fg">{{ member.username }}</p>
+              <span class="font-mono text-xs text-subtle">{{ member.extension }}</span>
+            </div>
+            <div class="mt-0.5 flex flex-wrap items-center gap-x-2">
+              <PhoneStateBadge v-if="phoneOf(member) === 'ringing' || phoneOf(member) === 'in_call'" :state="phoneOf(member)" />
+              <span v-else-if="phoneOf(member) === 'offline'" class="text-xs text-subtle">Nicht angemeldet</span>
+              <span v-else class="text-xs text-muted">{{ STATUS_LABELS[statusOf(member)] }}</span>
+            </div>
+          </div>
           <button
-            class="call-btn"
-            :disabled="statuses[member.user_id] === 'dnd' || member.user_id === auth.userId"
-            :title="member.user_id === auth.userId ? 'Das bist du' : `Durchwahl ${member.extension} anrufen`"
-            @click="call(member.extension)"
+            class="flex shrink-0 items-center gap-1.5 rounded-lg bg-cyan-500/10 px-2.5 py-1.5 text-xs font-medium text-brand transition-colors hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+            :disabled="!canCall()"
+            :title="callTitle(member)"
+            :aria-label="`${member.username} anrufen`"
+            @click="call(member.extension, member.username)"
           >
-            ☎
+            <Phone class="h-3.5 w-3.5" />
+            <span class="hidden sm:inline">Anrufen</span>
           </button>
         </li>
       </ul>
     </section>
-
   </div>
 </template>
-
-<style scoped>
-.home {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-  max-width: 640px;
-}
-
-/* ── Eigener Status ── */
-.own-status-card {
-  background: var(--kit-surface);
-  border: 1px solid var(--kit-border);
-  border-radius: var(--radius);
-  padding: var(--space-4) var(--space-5);
-}
-.own-status-inner {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-.own-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-full);
-  background: var(--kit-surface-2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.own-info { flex: 1; }
-.own-name { font-weight: 600; font-size: var(--text-sm); color: var(--kit-text); }
-.own-sub  { font-size: var(--text-xs); color: var(--kit-text-muted); }
-
-.status-picker { position: relative; }
-.status-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  background: var(--kit-surface-2);
-  border: 1px solid var(--kit-border);
-  border-radius: var(--radius);
-  font-size: var(--text-sm);
-  color: var(--kit-text);
-  cursor: pointer;
-  transition: background var(--transition);
-}
-.status-btn:hover { background: var(--kit-surface-3, var(--kit-surface)); }
-.chevron { font-size: 10px; color: var(--kit-text-muted); }
-
-.status-dropdown {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  background: var(--kit-surface);
-  border: 1px solid var(--kit-border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: var(--space-1);
-  min-width: 180px;
-  z-index: 50;
-}
-.status-option {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
-  color: var(--kit-text-muted);
-  text-align: left;
-  transition: background var(--transition), color var(--transition);
-}
-.status-option:hover { background: var(--kit-surface-2); color: var(--kit-text); }
-.status-option.active { color: var(--kit-text); font-weight: 500; }
-
-/* ── Team ── */
-.section-title {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--kit-text-muted);
-  margin-bottom: var(--space-3);
-}
-
-.team-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  list-style: none;
-}
-
-.team-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius);
-  background: var(--kit-surface);
-  border: 1px solid var(--kit-border);
-  transition: background var(--transition);
-}
-.team-row:hover { background: var(--kit-surface-2); }
-
-.member-info {
-  flex: 1;
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-}
-.member-name { font-size: var(--text-sm); font-weight: 500; color: var(--kit-text); }
-.member-ext  { font-size: var(--text-xs); color: var(--kit-text-muted); font-variant-numeric: tabular-nums; }
-
-.member-status-label {
-  font-size: var(--text-xs);
-  color: var(--kit-text-muted);
-  min-width: 90px;
-  text-align: right;
-}
-
-.call-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-full);
-  background: var(--kit-accent-muted);
-  color: var(--kit-accent);
-  font-size: var(--text-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background var(--transition), opacity var(--transition);
-  flex-shrink: 0;
-}
-.call-btn:hover:not(:disabled) { background: var(--kit-accent); color: #fff; }
-.call-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-
-/* ── Dots (gleiche Farben wie PresenceBadge) ── */
-.dot-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: var(--radius-full);
-  flex-shrink: 0;
-}
-.dot.available { background: var(--presence-available); }
-.dot.busy      { background: var(--presence-busy); }
-.dot.away      { background: var(--presence-away); }
-.dot.dnd       { background: var(--presence-dnd); }
-
-.phone-indicator {
-  position: absolute;
-  bottom: -5px;
-  right: -8px;
-  font-size: 8px;
-  line-height: 1;
-  pointer-events: none;
-}
-.phone-indicator.ringing {
-  animation: ring-pulse 0.8s ease-in-out infinite alternate;
-}
-@keyframes ring-pulse {
-  from { opacity: 0.5; transform: scale(0.9); }
-  to   { opacity: 1;   transform: scale(1.1); }
-}
-
-.member-status-label.phone-active {
-  color: var(--kit-accent, #4f8ef7);
-  font-weight: 500;
-}
-
-.empty {
-  font-size: var(--text-sm);
-  color: var(--kit-text-muted);
-  padding: var(--space-4);
-  text-align: center;
-  border: 1px dashed var(--kit-border);
-  border-radius: var(--radius);
-}
-</style>

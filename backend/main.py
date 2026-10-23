@@ -10,6 +10,7 @@ from services.asterisk_ari import ari_consumer
 from telephony.router import router as telephony_router
 from presence.router import router as presence_router
 from contacts.router import router as contacts_router
+from admin.router import router as admin_router
 
 settings = get_settings()
 
@@ -48,6 +49,7 @@ app.add_middleware(
 app.include_router(telephony_router, prefix="/telephony", tags=["Telefonie"])
 app.include_router(presence_router, prefix="/presence", tags=["Presence"])
 app.include_router(contacts_router, prefix="/contacts", tags=["Kontakte"])
+app.include_router(admin_router, prefix="/admin", tags=["Verwaltung"])
 
 
 @app.get("/health", tags=["System"])
