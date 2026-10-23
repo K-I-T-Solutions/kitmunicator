@@ -54,6 +54,10 @@ export function usePhone() {
     return store.toggleHold()
   }
 
+  function sendDtmf(tone: string): void {
+    store.sendDtmf(tone)
+  }
+
   // Dauer formatiert als MM:SS
   function formatDuration(seconds: number): string {
     const m = Math.floor(seconds / 60).toString().padStart(2, '0')
@@ -78,5 +82,6 @@ export function usePhone() {
     answer,
     mute,
     hold,
+    sendDtmf,
   }
 }

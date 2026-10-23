@@ -2,13 +2,15 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CircleAlert, Clock,
-  Delete, Mic, MicOff, Pause, Phone, PhoneOff, Play,
+  Delete, Grid3x3, Mic, MicOff, Pause, Phone, PhoneOff, Play,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { usePhone } from '@/composables/usePhone'
 import { onMissedCall, usePresence } from '@/composables/usePresence'
 import { useActiveCall } from '@/composables/useActiveCall'
 import { formatCallTime, formatDuration } from '@/lib/format'
+import { KEYPAD_KEYS as KEYS } from '@/lib/keypad'
+import DtmfPad from '@/components/call/DtmfPad.vue'
 
 const auth = useAuthStore()
 const {
@@ -23,12 +25,9 @@ const { hasActiveCall, remoteDisplayName, callStatusLabel } = useActiveCall()
 const dialInput = ref('')
 const inputEl = ref<HTMLInputElement | null>(null)
 
-const KEYS = [
-  { d: '1', l: '' }, { d: '2', l: 'ABC' }, { d: '3', l: 'DEF' },
-  { d: '4', l: 'GHI' }, { d: '5', l: 'JKL' }, { d: '6', l: 'MNO' },
-  { d: '7', l: 'PQRS' }, { d: '8', l: 'TUV' }, { d: '9', l: 'WXYZ' },
-  { d: '*', l: '' }, { d: '0', l: '+' }, { d: '#', l: '' },
-]
+// Tastenfeld im Gespräch (Mailbox-Menü, Sprachmenüs)
+const showDtmf = ref(false)
+watch(hasActiveCall, active => { if (!active) showDtmf.value = false })
 
 function pressKey(key: string) {
   if (dialInput.value.length < 20) dialInput.value += key
@@ -171,6 +170,21 @@ watch(callState, (state, prev) => {
             </span>
             <span class="text-[11px]">{{ isOnHold ? 'Fortsetzen' : 'Halten' }}</span>
           </button>
+          <button
+            class="flex flex-col items-center gap-1.5 disabled:opacity-40"
+            :class="showDtmf ? 'text-brand' : 'text-muted'"
+            :disabled="callState !== 'connected'"
+            :aria-pressed="showDtmf"
+            @click="showDtmf = !showDtmf"
+          >
+            <span
+              class="flex h-14 w-14 items-center justify-center rounded-full transition-colors"
+              :class="showDtmf ? 'bg-cyan-500/15 ring-1 ring-cyan-500/30' : 'bg-raised hover:text-fg'"
+            >
+              <Grid3x3 class="h-5 w-5" />
+            </span>
+            <span class="text-[11px]">Tastatur</span>
+          </button>
           <button class="flex flex-col items-center gap-1.5 text-red-500" @click="hangup()">
             <span class="flex h-14 w-14 items-center justify-center rounded-full bg-red-500 text-white shadow-lg shadow-red-500/20 transition-colors hover:bg-red-600">
               <PhoneOff class="h-6 w-6" />
@@ -178,6 +192,8 @@ watch(callState, (state, prev) => {
             <span class="text-[11px]">Auflegen</span>
           </button>
         </div>
+
+        <DtmfPad v-if="showDtmf && callState === 'connected'" class="mt-6 max-w-xs animate-fade-in" />
       </div>
 
       <form v-else class="mx-auto flex w-full max-w-sm flex-col" @submit.prevent="startCall">

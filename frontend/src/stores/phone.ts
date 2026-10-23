@@ -262,6 +262,14 @@ export const usePhoneStore = defineStore('phone', () => {
     isMuted.value = !isMuted.value
   }
 
+  /** Tastenton ins Gespräch senden (RFC 4733, passt zu dtmf_mode im Endpoint) */
+  function sendDtmf(tone: string): void {
+    const session = activeSession.value
+    if (!session || session.state !== SessionState.Established) return
+    const sdh = session.sessionDescriptionHandler as { sendDtmf?: (tones: string) => boolean } | undefined
+    if (!sdh?.sendDtmf?.(tone)) console.warn('DTMF konnte nicht gesendet werden:', tone)
+  }
+
   async function toggleHold(): Promise<void> {
     if (!activeSession.value) return
     if (isOnHold.value) {
@@ -288,5 +296,6 @@ export const usePhoneStore = defineStore('phone', () => {
     answer,
     toggleMute,
     toggleHold,
+    sendDtmf,
   }
 })
