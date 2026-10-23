@@ -15,7 +15,7 @@ Internes SIP/WebRTC-Kommunikationssystem für K.I.T. Solutions.
 
 - KITmunicator Backend + Asterisk auf cisco (192.168.178.x / Homelab)
 - TURN: coturn auf 192.168.178.100:3478
-- Aktueller Alembic-Stand: Migration 0007
+- Aktueller Alembic-Stand: Migration 0008
 
 ## Asterisk Realtime (seit 2026-10-21)
 
