@@ -444,9 +444,13 @@ async def callee_lookup(extension: str, db: AsyncSession = Depends(get_db)) -> s
     response_class=PlainTextResponse,
     dependencies=[Depends(require_internal_secret)],
 )
-async def group_lookup(extension: str, db: AsyncSession = Depends(get_db)) -> str:
+async def group_lookup(
+    extension: str,
+    caller: str = Query("", description="SIP-Username des Anrufers, klingelt nicht mit"),
+    db: AsyncSession = Depends(get_db),
+) -> str:
     """Dialplan _20XX: 'timeout|Dial-String|Fallback'."""
-    return await group_dial_info(db, extension)
+    return await group_dial_info(db, extension, exclude_username=caller)
 
 
 @router.get(

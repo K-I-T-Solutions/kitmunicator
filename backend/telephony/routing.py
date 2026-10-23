@@ -46,14 +46,15 @@ async def callee_info(db: AsyncSession, extension: str) -> str:
     return f"{account.username}|{status}|{'1' if account.fcm_token else '0'}"
 
 
-async def group_dial_info(db: AsyncSession, extension: str) -> str:
+async def group_dial_info(db: AsyncSession, extension: str, exclude_username: str = "") -> str:
     """'timeout|PJSIP/a&PJSIP/b|fallback' — leer, wenn es die Gruppe nicht gibt.
-    Gesperrte Mitglieder und „Nicht stören“ fallen raus; Nicht-Registrierte überspringt Dial().
+    Gesperrte Mitglieder, „Nicht stören“ und der Anrufer selbst fallen raus;
+    Nicht-Registrierte überspringt Dial().
     Ohne erreichbare Mitglieder bleibt der Dial-Teil leer → direkt Weiterleitung."""
     group = await db.scalar(select(RingGroup).where(RingGroup.extension == extension))
     if not group:
         return ""
-    members = [m for m in group.members if m.is_active]
+    members = [m for m in group.members if m.is_active and m.username != exclude_username]
     dnd = await _dnd_user_ids(db, [m.user_id for m in members])
     dial = "&".join(f"PJSIP/{m.username}" for m in members if m.user_id not in dnd)
     return f"{group.ring_timeout}|{dial}|{group.fallback_extension or ''}"
