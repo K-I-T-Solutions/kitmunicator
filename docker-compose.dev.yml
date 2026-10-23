@@ -96,6 +96,8 @@ services:
       ASTERISK_DB_NAME: kitmunicator
       ASTERISK_DB_USER: ${ASTERISK_DB_USER}
       ASTERISK_DB_PASSWORD: ${ASTERISK_DB_PASSWORD}
+      # Header X-Internal-Secret für CURL() ans Backend (sub_backend im Dialplan)
+      ASTERISK_INTERNAL_SECRET: ${ASTERISK_INTERNAL_SECRET}
     # network_mode host wäre ideal für RTP/NAT, aber bricht
     # core_network-Kommunikation – daher explizite Port-Bindings
     ports:

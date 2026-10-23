@@ -114,6 +114,9 @@ services:
     image: andrius/asterisk:20
     container_name: kitmunicator_asterisk
     restart: unless-stopped
+    environment:
+      # Header X-Internal-Secret für CURL() ans Backend (sub_backend im Dialplan)
+      ASTERISK_INTERNAL_SECRET: ${ASTERISK_INTERNAL_SECRET}
     ports:
       - "5060:5060/udp"
       # WSS-Port: Traefik terminiert TLS und leitet an 8089 weiter

@@ -33,8 +33,9 @@ class Settings(BaseSettings):
     FIREBASE_SERVICE_ACCOUNT_FILE: str = "/app/firebase-adminsdk.json"
     FCM_PROJECT_ID: str = "kitmunicator"
 
-    # Asterisk-Webhook: Erlaubte Quell-IPs (Komma-getrennt, leer = alle intern)
-    ASTERISK_WEBHOOK_SECRET: str = ""
+    # Gemeinsames Secret für Asterisk → Backend (/telephony/internal/*, Push-Webhook).
+    # Leer = alle internen Aufrufe werden abgelehnt.
+    ASTERISK_INTERNAL_SECRET: str = ""
 
     # Asterisk-Voicemail-Spool (Volume, read-only eingehängt)
     VOICEMAIL_SPOOL_DIR: str = "/var/spool/asterisk/voicemail"

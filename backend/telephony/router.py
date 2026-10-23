@@ -9,7 +9,6 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import get_settings
 from database import get_db
 from keycloak import get_current_user, require_role
 from telephony.models import SipAccount, CallRecord, Voicemail, CallDirection, CallStatus
@@ -20,6 +19,7 @@ from telephony.service import (
     sip_md5_cred,
 )
 from telephony.voicemail_store import sync_mailbox, resolve_audio
+from telephony.internal_auth import require_internal_secret
 from telephony.routing import callee_info, group_dial_info, inbound_target
 from telephony.greetings import (
     GreetingError, MAX_BYTES as GREETING_MAX_BYTES,
@@ -363,27 +363,20 @@ class IncomingCallWebhook(BaseModel):
     callee_extension: str
     # Asterisk UNIQUEID des Channels — wird als CallKit-UUID verwendet
     uuid: str = ""
-    # Optionaler Webhook-Secret-Header zur Absicherung
-    secret: str = ""
 
 
-@router.post("/webhook/incoming-call", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/webhook/incoming-call",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_internal_secret)],
+)
 async def incoming_call_webhook(
     body: IncomingCallWebhook,
-    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Asterisk ruft diesen Endpoint auf, wenn ein Anruf eingeht und der
     SIP-Endpoint nicht erreichbar ist (CHANUNAVAIL). Das Backend schickt
     dann einen FCM-Push an das Gerät des Nutzers."""
-    settings = get_settings()
-
-    # Webhook-Secret prüfen (wenn konfiguriert)
-    if settings.ASTERISK_WEBHOOK_SECRET:
-        header_secret = request.headers.get("X-Webhook-Secret", "")
-        if header_secret != settings.ASTERISK_WEBHOOK_SECRET:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Ungültiges Webhook-Secret")
-
     account = await db.scalar(
         select(SipAccount).where(SipAccount.extension == body.callee_extension)
     )
@@ -415,13 +408,17 @@ async def incoming_call_webhook(
         logger.error("[FCM] Fehler beim Push: %s (HTTP %s)", e.detail, e.status_code)
 
 
-@router.get("/internal/ext-lookup/{extension}", response_class=PlainTextResponse)
+@router.get(
+    "/internal/ext-lookup/{extension}",
+    response_class=PlainTextResponse,
+    dependencies=[Depends(require_internal_secret)],
+)
 async def extension_lookup(
     extension: str,
     db: AsyncSession = Depends(get_db),
 ) -> str:
     """Interner Asterisk-Dialplan-Lookup: Durchwahl → SIP-Username.
-    Kein Auth — nur aus dem internen Docker-Netz erreichbar."""
+    Nur mit X-Internal-Secret (Asterisk)."""
     account = await db.scalar(
         select(SipAccount).where(
             SipAccount.extension == extension,
@@ -431,20 +428,32 @@ async def extension_lookup(
     return account.username if account else ""
 
 
-@router.get("/internal/callee/{extension}", response_class=PlainTextResponse)
+@router.get(
+    "/internal/callee/{extension}",
+    response_class=PlainTextResponse,
+    dependencies=[Depends(require_internal_secret)],
+)
 async def callee_lookup(extension: str, db: AsyncSession = Depends(get_db)) -> str:
     """Dialplan _10XX: 'username|status|push'. status = 'dnd' → nicht klingeln,
-    push = '1' → App per FCM wecken, wenn nicht registriert. Kein Auth — wie ext-lookup."""
+    push = '1' → App per FCM wecken, wenn nicht registriert."""
     return await callee_info(db, extension)
 
 
-@router.get("/internal/group/{extension}", response_class=PlainTextResponse)
+@router.get(
+    "/internal/group/{extension}",
+    response_class=PlainTextResponse,
+    dependencies=[Depends(require_internal_secret)],
+)
 async def group_lookup(extension: str, db: AsyncSession = Depends(get_db)) -> str:
-    """Dialplan _20XX: 'timeout|Dial-String|Fallback'. Kein Auth — wie ext-lookup."""
+    """Dialplan _20XX: 'timeout|Dial-String|Fallback'."""
     return await group_dial_info(db, extension)
 
 
-@router.get("/internal/inbound/{dialed}", response_class=PlainTextResponse)
+@router.get(
+    "/internal/inbound/{dialed}",
+    response_class=PlainTextResponse,
+    dependencies=[Depends(require_internal_secret)],
+)
 async def inbound_lookup(dialed: str, db: AsyncSession = Depends(get_db)) -> str:
     """Dialplan from_trunk: angerufene Nummer → Ziel-Durchwahl (leer = keine Zuordnung)."""
     return await inbound_target(db, dialed)
